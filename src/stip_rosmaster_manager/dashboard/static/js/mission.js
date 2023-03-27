@@ -112,21 +112,23 @@ async function finishMap(save) { releaseTeleop(); await safe('teleop_arm', { ena
 } await safe('stop_mapping'); await refreshLists(); state.mode = 'list'; page('maps', 'list'); }
 async function toggleTeleop() {
     if (teleopChanging) return;
-    if (!((state.page === 'maps' && state.mode === 'mapping') || (state.page === 'mission' && state.mode === 'edit'))) return;
+    const patrolManual=state.page==='patrol' && state.mode==='live';
+    if (!((state.page === 'maps' && state.mode === 'mapping') || (state.page === 'mission' && state.mode === 'edit') || patrolManual)) return;
     teleopChanging = true;
     try {
         if (state.teleop) {
             // Disarming itself publishes a zero Twist in the ROS worker.
             // Never queue another teleop packet behind the disarm request.
-            state.teleop=false;
+            state.teleop=false;teleopSession=null;
             clearInterval(moveTimer); moveTimer=null;
             state.held=null; teleopStopPending=false;
             const r=await safe('teleop_arm',{enabled:false});
             if (!r) toast('Check teleop status: disarm was not acknowledged',true);
         } else {
-            const r=await safe('teleop_arm',{enabled:true});
+            if(patrolManual && !confirm('Take manual control? This will STOP the patrol, CANCEL its navigation goal, and require restarting the mission from its FIRST waypoint.'))return;
+            const r=await safe(patrolManual?'patrol_takeover':'teleop_arm',{enabled:true});
             if (r && r.armed) {
-                teleopSeq=0;
+                teleopSeq=0;teleopSession=r.session;
                 state.teleop=true;
                 state.teleopStartAt=Date.now();
             }
@@ -149,16 +151,16 @@ async function flushTeleop() {
         const linear=d==='w'?state.linear:d==='s'?-state.linear:0;
         const angular=d==='a'?state.angular:d==='d'?-state.angular:0;
         teleopStopPending=false;
-        await act('teleop',{linear,angular,seq:++teleopSeq},1500);
+        await act('teleop',{linear,angular,seq:++teleopSeq,session:teleopSession},2200);
     } catch(e) {
         // Never keep issuing commands after the ROS worker rejects control.
         const wasMoving=!!state.held;
-        state.held=null;state.teleop=false;
+        state.held=null;state.teleop=false;teleopSession=null;
         clearInterval(moveTimer);moveTimer=null;teleopStopPending=false;
-        if (wasMoving) toast('Teleop disarmed: '+e.message,true);
+        toast('Teleop disarmed: '+e.message,true);
         // Backend owns safety; explicitly request a zero-velocity disarm.
         act('teleop_arm',{enabled:false},2000).catch(()=>{});
-        const button=document.querySelector('#fp_teleop button, #fp_missionteleop button');
+        const button=document.querySelector('#fp_teleop button, #fp_missionteleop button, #fp_patrolteleop button');
         if (button) {button.textContent='Enable Teleop';button.classList.remove('red');button.classList.add('blue');}
     } finally {
         teleopSending=false;
@@ -167,7 +169,7 @@ async function flushTeleop() {
 }
 function sendHeld() { if (state.teleop && state.held)
     flushTeleop(); }
-function pressMove(d) { if (!state.teleop)
+function pressMove(d) { if (!state.teleop || document.querySelector('#modalBackdrop'))
     return; state.held = d; teleopStopPending = false; clearInterval(moveTimer); sendHeld(); moveTimer = setInterval(sendHeld, 90); }
 function attachTeleopButtons() { $$('[data-move]').forEach(el => { el.addEventListener('pointerdown', e => { e.preventDefault(); el.setPointerCapture(e.pointerId); pressMove(el.dataset.move); }); el.addEventListener('pointerup', releaseTeleop); el.addEventListener('pointercancel', releaseTeleop); el.addEventListener('lostpointercapture', releaseTeleop); }); }
 document.addEventListener('keydown', e => { if (/input|textarea|select/i.test(e.target.tagName) || e.repeat)
@@ -178,33 +180,55 @@ document.addEventListener('keydown', e => { if (/input|textarea|select/i.test(e.
 document.addEventListener('keyup', e => { if (e.key.toLowerCase() === state.held)
     releaseTeleop(); });
 function loseFocus() { stopQrArm(); releaseTeleop(); if (state.teleop) {
-    state.teleop = false;
+    state.teleop = false;teleopSession=null;
     safe('teleop_arm', { enabled: false });
 } }
 window.addEventListener('blur', loseFocus);
 document.addEventListener('visibilitychange', () => { if (document.hidden)
     loseFocus(); });
 window.addEventListener('pagehide', loseFocus);
-function addWaypoint() {
-    var _a, _b;
-    if (state.page !== 'mission' || state.mode !== 'edit')
-        return;
-    const ros = state.status.ros || {}, robot = ros.robot_map;
-    if (state.held || ((_b = (_a = state.status.ros) === null || _a === void 0 ? void 0 : _a.teleop) === null || _b === void 0 ? void 0 : _b.moving))
-        return toast('Release teleop and wait until the robot has stopped before adding a waypoint.', true);
-    if (!ros.connected)
-        return toast('ROS adapter offline: check dashboard connection.', true);
-    if (!robot || ![robot.x, robot.y, robot.yaw].every(Number.isFinite))
-        return toast('Map-frame pose unavailable: check map → odom → base_link TF and localization.', true);
-    if (!confirm(`Save current robot pose as waypoint?\nX ${robot.x.toFixed(2)} m, Y ${robot.y.toFixed(2)} m, heading ${(robot.yaw * 180 / Math.PI).toFixed(1)}°`))
-        return;
-    let pts = state.mission.waypoints, id = 'P' + (pts.length + 1);
-    while (pts.some(p => p.id === id))
-        id = 'P' + (Number(id.slice(1)) + 1);
-    pts.push({ id, name: 'Point ' + (pts.length + 1), x: robot.x, y: robot.y, yaw: robot.yaw, tasks: [] });
-    state.pointIndex = pts.length - 1;
-    render();
-    paintMap();
+// Saving a waypoint must NOT disarm a healthy manual session. A native
+// confirm() can trigger window blur/visibilitychange, which previously issued
+// teleop_arm(false). Use our non-blocking dashboard modal instead.
+let waypointSaveBusy=false;
+async function addWaypoint() {
+    if (waypointSaveBusy || state.page!=='mission' || state.mode!=='edit') return;
+    if (state.held) return toast('Release W/A/S/D and let the robot stop before saving a waypoint.',true);
+    waypointSaveBusy=true;
+    try {
+        // A final acknowledged ZERO command ensures that no earlier velocity
+        // packet can remain outstanding across pose capture.
+        if (state.teleop) {
+            clearInterval(moveTimer);moveTimer=null;teleopStopPending=false;
+            while (teleopSending) await new Promise(resolve=>setTimeout(resolve,20));
+            const zero=await act('teleop',{linear:0,angular:0,seq:++teleopSeq,session:teleopSession},2200);
+            if (!zero || !zero.sent) throw Error('Teleop stop was not acknowledged; check control status');
+        }
+        if(state.page!=='mission' || state.mode!=='edit') return;
+        const ros=state.status.ros||{};
+        if (!ros.connected) throw Error('ROS adapter offline: check dashboard connection.');
+        if (!ros.robot_map || ![ros.robot_map.x,ros.robot_map.y,ros.robot_map.yaw].every(Number.isFinite))
+            throw Error('Live map pose unavailable: check localization and TF.');
+        const robot=ros.robot_map;
+        modal('Save Current Robot Pose?',
+            `<p>Robot must be fully stationary.</p><p>X ${robot.x.toFixed(2)} m · Y ${robot.y.toFixed(2)} m · Heading ${(robot.yaw*180/Math.PI).toFixed(1)}°</p>`+
+            `<p class="small muted">Manual Teleop remains armed; no need to restart the dashboard.</p>`,
+            btn('Cancel','closeModal()')+btn('Save Pose','confirmWaypointPose()','green'));
+    } catch(e) {toast('Cannot save waypoint: '+e.message,true);}
+    finally {waypointSaveBusy=false;}
+}
+function confirmWaypointPose(){
+    if (state.page!=='mission' || state.mode!=='edit') return closeModal();
+    const ros=state.status.ros||{},robot=ros.robot_map;
+    if (state.held || (ros.teleop && ros.teleop.moving))
+        return toast('Robot moving: release manual drive before saving the waypoint.',true);
+    if (!ros.connected || !robot || ![robot.x,robot.y,robot.yaw].every(Number.isFinite))
+        return toast('Map-frame pose unavailable; check TF/localization.',true);
+    const pts=state.mission.waypoints;let id='P'+(pts.length+1);
+    while (pts.some(p=>p.id===id)) id='P'+(Number(id.slice(1))+1);
+    pts.push({id,name:'Point '+(pts.length+1),x:robot.x,y:robot.y,yaw:robot.yaw,tasks:[]});
+    state.pointIndex=pts.length-1;
+    closeModal();render();paintMap();
 }
 function selectPoint(i) { state.pointIndex = i; render(); }
 function updatePointName(name) { if (state.pointIndex >= 0)
@@ -212,7 +236,7 @@ function updatePointName(name) { if (state.pointIndex >= 0)
 function deletePoint() { if (state.pointIndex < 0)
     return; if (!confirm('Delete this waypoint and its tasks?'))
     return; state.mission.waypoints.splice(state.pointIndex, 1); state.pointIndex = -1; render(); }
-async function navigateSelected() { var _a, _b; const point = (_a = state.mission) === null || _a === void 0 ? void 0 : _a.waypoints[state.pointIndex]; if (!point)
+async function navigateSelected() { if(state.teleop)return toast('Release Teleop before sending a navigation goal',true); var _a, _b; const point = (_a = state.mission) === null || _a === void 0 ? void 0 : _a.waypoints[state.pointIndex]; if (!point)
     return; const status = state.status.processes || {}; if (!((_b = status.navigation) === null || _b === void 0 ? void 0 : _b.running)) {
     let started = await safe('start_navigation', { map: state.activeMap });
     if (!started)

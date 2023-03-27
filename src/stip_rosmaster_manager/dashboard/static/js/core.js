@@ -5,6 +5,7 @@ const state = { page: 'home', mode: 'list', status: { ros: { connected: false } 
 let qrLiveTimer = null, qrProbeTimer = null, qrProbeBusy = false, qrNudgeBusy = false;
 let qrHeld = null, qrArmLoop = null, qrCamActive = false, qrCamBusy = false, qrCamGeneration = 0;
 let teleopSending = false, teleopStopPending = false, teleopChanging = false, patrolExiting = false;
+let teleopSession = null; // ROS arm epoch; late packets from old epochs are rejected.
 let toastTimer, moveTimer, zoom = 1, dragMove = null, paintCtx = null, curMapName = null, teleopSeq = 0, mapView = { x: 0, y: 0, angle: 0 }, latestRenderedMap = 0;
 function toast(msg, isError = false) { const root = $('#toastRoot'); root.innerHTML = `<div class="toast ${isError ? 'error' : ''}">${esc(msg)}</div>`; clearTimeout(toastTimer); toastTimer = setTimeout(() => root.innerHTML = '', 4700); }
 async function get(path) { const r = await fetch('/api/' + path, { headers: tokenHeaders(), cache: 'no-store' }); const x = await r.json(); if (!r.ok)
@@ -78,7 +79,7 @@ function page(name, mode) { if ((typeof patrolExiting !== 'undefined' && patrolE
     requestLeaveMapping(name, mode);
     return;
 } const wasArmed = state.teleop; releaseTeleop(); if (wasArmed) {
-    state.teleop = false;
+    state.teleop = false;teleopSession=null;
     safe('teleop_arm', { enabled: false });
 } zoom = 1; mapView = { x: 0, y: 0, angle: 0 }; latestRenderedMap = 0; state.page = name; state.mode = mode || 'list'; $('#sidebar').querySelectorAll('.nav').forEach(n => n.classList.toggle('active', n.dataset.page === name)); render(); }
 $$('.nav').forEach(n => n.addEventListener('click', () => { page(n.dataset.page); }));

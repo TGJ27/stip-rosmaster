@@ -1,9 +1,9 @@
 // STIP dashboard module: runtime
 async function exitMission() {requestLeaveMission('mission','list');}
-async function startPatrol() { if (!state.patrolMission)
+async function startPatrol() { if(state.teleop)return toast('Release manual control before starting Patrol',true); if (!state.patrolMission)
     return; if (!state.localized) return toast('Confirm the robot pose before starting patrol', true); state.patrolMission.loop = !!state.patrolMission.loop; const r = await safe('patrol_start', { mission_id: state.patrolMission.id, loop: state.patrolMission.loop, operator_confirmed: true }); if (r)
     toast('Patrol start accepted'); }
-async function patrolCmd(cmd) { const r = await safe(cmd); if (r)
+async function patrolCmd(cmd) { if(state.teleop && cmd!=='stop')return toast('Release manual teleop before continuing Patrol',true); if(cmd==='stop' && state.teleop){releaseTeleop();state.teleop=false;teleopSession=null;await safe('teleop_arm',{enabled:false});render();} const r = await safe(cmd); if (r)
     toast('Command sent: ' + cmd); }
 async function qrToggle(enabled) { const r = await safe('qr_enable', { enabled }); if (r)
     state.qr = enabled; }
@@ -101,7 +101,19 @@ async function tick() {
                 }
             }
         }
+        updateGasAlarmIndicator();
         updateLocalizationControls();
+        // Reconcile *all* teleop contexts (Mission, Mapping, Patrol), not only
+        // Patrol. Another browser, an emergency STOP, or a ROS restart may
+        // revoke this session. Never keep showing an armed control after that.
+        const liveTeleop=(state.status.ros||{}).teleop;
+        if(state.teleop && (state.status.ros||{}).connected && liveTeleop &&
+            !teleopChanging && Date.now()-(state.teleopStartAt||0)>1100 &&
+            (liveTeleop.armed===false || (liveTeleop.session!==undefined &&
+                teleopSession!==null && liveTeleop.session!==teleopSession))){
+            releaseTeleop();state.teleop=false;teleopSession=null;
+            render();toast('ROS revoked Teleop control (STOP, another session, or adapter restart). Re-enable to drive.',true);
+        }
         if (state.page==='settings') {
             const fireState=$('#settingsFireMonitorState');
             if(fireState){
@@ -113,10 +125,16 @@ async function tick() {
             if(g) g.innerHTML=gasCalibrationPanel();
             const config=$('#fireSettingsLoaded');
             if(config && !config.value)loadFireSettings();
+            const gasConfig=$('#gasAlarmSettingsLoaded');
+            if(gasConfig && !gasConfig.value)loadGasAlarmSettings();
+            const gasState=$('#gasAlarmSettingsState');
+            if(gasState)gasState.textContent=formatGasAlarmStatus();
             const trackConfig=$('#trackingSettingsLoaded');
             if(trackConfig && !trackConfig.value)loadTrackingSpeed();
         }
         if (state.page==='patrol' && state.mode==='live') {
+            const gasPatrol=$('#patrolGasAlarm');if(gasPatrol)gasPatrol.textContent=formatGasAlarmStatus();
+            const teleopStatus=$('#patrolManualStatus');if(teleopStatus)teleopStatus.textContent=state.teleop?'MANUAL CONTROL ARMED — hold to move':'Autonomous mode / idle';
             updatePatrolInspection();
             const fusion=(state.status.ros || {}).fire_fusion || {};
             if(state.fireTrackingPending && state.fire && fusion.navigation_pause_ack && !trackingRequestBusy && Date.now()>=trackingRetryAt) {

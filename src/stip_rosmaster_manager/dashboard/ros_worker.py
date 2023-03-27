@@ -85,11 +85,15 @@ class Adapter:
         self.fire_hold = False
         self.fire_pause_requested = False
         self.teleop_armed = False
+        # Serializes commands arriving on independent RPC handler threads.
+        self.motion_lock = threading.RLock()
+        self.teleop_session = 0  # Invalidates delayed packets after each arm/disarm.
         self.last_teleop = 0
         self.teleop_seq = -1
         self.arm_hold=ArmHold(self.state['arm'], interval=.18, timeout=.42, degrees_per_sec=8.0)
         self.client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         self.cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        self.gas_alarm_pub = rospy.Publisher('/gas_sensor/alarm_cmd', Bool, queue_size=1)
         self.pose_pub = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=2)
         # Register only while this dashboard owns a manual camera-arm operation.
         # The ROS fire inspection package enforces exclusive /TargetAngle ownership.
@@ -118,6 +122,7 @@ class Adapter:
         rospy.Subscriber('/fire_inspection/background_c',Float32,lambda m:self.set_value('fire_background_c',round(m.data,1)),queue_size=1)
         rospy.Subscriber('/thermal/healthy', Bool, lambda m: self.health('thermal', m.data), queue_size=1)
         rospy.Subscriber('/gas_sensor/healthy', Bool, lambda m: self.health('gas', m.data), queue_size=1)
+        rospy.Subscriber('/gas_sensor/alarm_state', Bool, lambda m:self.set_value('gas_alarm_state',bool(m.data)), queue_size=1)
         rospy.Subscriber('/fire_detection/enabled', Bool, self.fire_enabled, queue_size=1)
         rospy.Subscriber('/gas_sensor/raw', Int32, lambda m: self.set_value('gas_raw', int(m.data)), queue_size=1)
         rospy.Subscriber('/gas_sensor/change_percent', Float32,
@@ -132,7 +137,10 @@ class Adapter:
         threading.Thread(target=self.report_loop, daemon=True).start()
 
     def set_value(self, k, v):
-        with self.lock: self.state[k] = v
+        with self.lock:
+            self.state[k] = v
+            if k == 'gas_change_percent':
+                self.state['gas_sample_mono'] = time.monotonic()
 
     def health(self, k, v):
         with self.lock: self.state['health'][k] = bool(v)
@@ -403,24 +411,34 @@ class Adapter:
         self.sync_fire_hold()
 
     def stop_motion(self):
-        self.teleop_armed=False
-        self.last_motion_active=False
-        self.pause.set()
-        self.goal_cancel.set()
-        self.arm_hold.stop()
-        try:self.client.cancel_all_goals()
-        except Exception: pass
-        for _ in range(3): self.cmd_vel.publish(Twist())
+        # STOP wins over an in-flight teleop HTTP/RPC request.
+        with self.motion_lock:
+            self.teleop_armed=False
+            self.teleop_session+=1
+            self.last_motion_active=False
+            self.pause.set()
+            self.goal_cancel.set()
+            if self.state.get('nav')=='MOVING':
+                self.state['nav']='STOPPED'
+            self.arm_hold.stop()
+            try:self.client.cancel_all_goals()
+            except Exception: pass
+            for _ in range(3): self.cmd_vel.publish(Twist())
 
     def teleop_watchdog(self):
         rate=rospy.Rate(12)
         while not rospy.is_shutdown():
             # The teleop can stay ARMED while idle. Only motion needs a
             # heartbeat. Disarming after 350ms idle caused false rejections.
-            if self.teleop_armed and self.last_motion_active and time.monotonic()-self.last_teleop>0.35:
-                self.last_motion_active=False
-                self.cmd_vel.publish(Twist())
-                emit('event', message='Teleop command timeout: zero velocity')
+            # Allow bounded browser/network jitter, but never allow a stale
+            # command to drive indefinitely. This stops MOTION, not the arm state.
+            with self.motion_lock:
+                expired=(self.teleop_armed and self.last_motion_active and
+                         time.monotonic()-self.last_teleop>0.60)
+                if expired:
+                    self.last_motion_active=False
+                    self.cmd_vel.publish(Twist())
+            if expired:emit('event', message='Teleop heartbeat gap >600 ms: motor zero (control remains armed)')
             rate.sleep()
 
     def report_loop(self):
@@ -472,7 +490,8 @@ class Adapter:
             initialpose_subscribed=self.pose_pub.get_num_connections()>0 if online else False
             with self.lock:
                 self.state['localization']['initialpose_subscribers']=initialpose_subscribed
-                self.state['teleop']={'armed':self.teleop_armed,'moving':self.last_motion_active}
+                self.state['teleop']={'armed':self.teleop_armed,'moving':self.last_motion_active,
+                                      'session':self.teleop_session}
                 self.state['connected']=online
                 for overlay in ('inspection_geometry','fire_detections'):
                     data=self.state.get(overlay)
@@ -598,6 +617,8 @@ class Adapter:
         return {'accepted':True,'localized':False}
 
     def goal(self, point):
+        # Mission Editor navigation and manual teleop must not both command /cmd_vel.
+        if self.teleop_armed:raise ValueError('Release Teleop before sending a navigation goal')
         if not self.state.get('robot_map'):raise ValueError('Map-frame robot pose unavailable. Check map-to-base TF or /amcl_pose')
         if self.fire_hold: raise ValueError('Navigation blocked by fire hold')
         if not self.client.wait_for_server(rospy.Duration(1.0)):raise ValueError('move_base unavailable')
@@ -606,9 +627,16 @@ class Adapter:
         goal.target_pose.pose.position.x=x;goal.target_pose.pose.position.y=y
         goal.target_pose.pose.orientation.z=math.sin(yaw/2)
         goal.target_pose.pose.orientation.w=math.cos(yaw/2)
-        self.goal_cancel.clear()
-        with self.lock:self.state['arrived_id']=None
-        self.client.send_goal(goal)
+        # Lock the final send and owner transition against Teleop ARM and STOP.
+        # The server existence check above is intentionally outside the lock.
+        with self.motion_lock:
+            if self.teleop_armed:raise ValueError('Release Teleop before sending a navigation goal')
+            if self.fire_hold:raise ValueError('Navigation blocked by fire hold')
+            self.goal_cancel.clear()
+            with self.lock:
+                self.state['arrived_id']=None
+                self.state['nav']='MOVING'
+            self.client.send_goal(goal)
         emit('event', message='Navigation goal sent: {} (x {:.2f}, y {:.2f}, yaw {:.1f}°)'.format(point.get('name',point.get('id','Waypoint')),x,y,math.degrees(yaw)))
         def check_arrival(pointid=point.get('id'), started=time.monotonic()):
             from actionlib_msgs.msg import GoalStatus
@@ -619,12 +647,12 @@ class Adapter:
                     emit('event',message='Arrived at waypoint: {}'.format(point.get('name',pointid or 'Waypoint')))
                     break
                 if result in (GoalStatus.ABORTED,GoalStatus.REJECTED,GoalStatus.PREEMPTED,GoalStatus.LOST):
+                    if self.goal_cancel.is_set():break  # Operator cancellation is not a navigation failure.
                     with self.lock:self.state['nav']='FAILED'
                     emit('event',message='Navigation aborted/failed: {} (action state {})'.format(point.get('name',pointid or 'Waypoint'),result))
                     break
                 time.sleep(.1)
         threading.Thread(target=check_arrival,daemon=True).start()
-        with self.lock:self.state['nav']='MOVING'
         return {'accepted':True}
 
     def mission_runner(self, mission):
@@ -848,35 +876,78 @@ class Adapter:
     def handle(self, name, payload):
         if name=='ping':return {'ros':True}
         if name=='stop':self.stop_motion();self.patrol_halt.set();return {'stopped':True}
+        if name=='gas_alarm':
+            enabled=bool(payload.get('enabled'))
+            self.gas_alarm_pub.publish(Bool(data=enabled))
+            return {'sent':True,'requested':enabled}  # Hardware ACK is /gas_sensor/alarm_state.
+        if name=='patrol_takeover':
+            if self.fire_hold or self.state.get('confirmed') or self.state.get('warning'):
+                raise ValueError('Fire hold/warning active; manual motion is blocked')
+            # Stop existing move_base execution permanently. Restarting Patrol
+            # after manual driving begins the mission from its first waypoint.
+            self.stop_motion()
+            self.patrol_halt.set()
+            runner=self.patrol_thread
+            if runner and runner.is_alive():
+                runner.join(timeout=2.5)
+                if runner.is_alive():
+                    raise ValueError('Patrol task still stopping; teleop was NOT armed')
+            if self.fire_hold or self.state.get('confirmed') or self.state.get('warning'):
+                raise ValueError('Fire condition appeared; teleop was NOT armed')
+            with self.lock:
+                self.state['mission']['state']='STOPPED'
+                self.state['mission']['task']=''
+                self.state['nav']='MANUAL'
+            with self.motion_lock:
+                self.teleop_session+=1
+                self.teleop_armed=True
+                self.teleop_seq=-1
+                self.last_teleop=time.monotonic()
+                self.last_motion_active=False
+                self.cmd_vel.publish(Twist())
+                session=self.teleop_session
+            emit('event',message='Manual takeover: Patrol stopped, goal cancelled; teleop armed')
+            return {'armed':True,'session':session,'patrol_stopped':True,'restart_from_beginning':True}
         if name=='teleop_arm':
             enabled=bool(payload.get('enabled'))
-            if enabled and (self.fire_hold or self.state['mission'].get('state') in ('RUNNING','PAUSED')):
-                raise ValueError('Motion blocked by an active mission or fire hold')
-            self.teleop_armed=enabled
-            self.teleop_seq=-1
-            self.last_teleop=time.monotonic()
-            self.last_motion_active=False
-            self.cmd_vel.publish(Twist())
-            return {'armed':self.teleop_armed}
+            with self.motion_lock:
+                if enabled and (self.fire_hold or self.state['mission'].get('state') in ('RUNNING','PAUSED')):
+                    raise ValueError('Motion blocked by an active mission or fire hold')
+                if enabled and self.state.get('nav')=='MOVING':
+                    raise ValueError('Cancel the active navigation goal before enabling Teleop')
+                self.teleop_session+=1
+                self.teleop_armed=enabled
+                self.teleop_seq=-1
+                self.last_teleop=time.monotonic()
+                self.last_motion_active=False
+                self.cmd_vel.publish(Twist())
+                session=self.teleop_session
+            emit('event',message='Manual Teleop {} (session {})'.format('ARMED' if enabled else 'DISARMED',session))
+            return {'armed':enabled,'session':session}
         if name=='teleop':
             seq=int(payload.get('seq',0))
-            with self.lock:
-                if seq<self.teleop_seq:return {'ignored':'stale teleop command'}
-                self.teleop_seq=seq
+            session=payload.get('session')
             linear=max(-0.4,min(0.4,float(payload.get('linear',0))))
             angular=max(-1.5,min(1.5,float(payload.get('angular',0))))
-            if not self.teleop_armed or self.fire_hold or self.state['mission'].get('state') in ('RUNNING','PAUSED'):
-                # A late zero-velocity packet is a normal release/disarm race.
-                # Acknowledge it safely without producing noisy HTTP 400 responses.
-                self.cmd_vel.publish(Twist())
-                self.last_motion_active=False
-                if abs(linear)<1e-6 and abs(angular)<1e-6:
-                    return {'sent':False,'ignored':'already stopped/disarmed'}
-                raise ValueError('Teleop not armed or motion blocked: enable Teleop and check patrol/fire state')
-            msg=Twist();msg.linear.x=linear;msg.angular.z=angular
-            self.cmd_vel.publish(msg);self.last_teleop=time.monotonic()
-            self.last_motion_active=(abs(linear)>1e-6 or abs(angular)>1e-6)
-            return {'sent':True}
+            with self.motion_lock:
+                # Packets from the previous arm/disarm epoch must never move
+                # the robot after a new UI session starts.
+                if session is None or int(session)!=self.teleop_session:
+                    return {'sent':False,'ignored':'expired teleop session'}
+                if seq<=self.teleop_seq:
+                    return {'sent':False,'ignored':'stale teleop command'}
+                self.teleop_seq=seq
+                if not self.teleop_armed or self.fire_hold or self.state['mission'].get('state') in ('RUNNING','PAUSED'):
+                    self.cmd_vel.publish(Twist())
+                    self.last_motion_active=False
+                    if abs(linear)<1e-6 and abs(angular)<1e-6:
+                        return {'sent':False,'ignored':'already stopped/disarmed'}
+                    raise ValueError('Teleop not armed or motion blocked: check patrol/fire state')
+                msg=Twist();msg.linear.x=linear;msg.angular.z=angular
+                self.cmd_vel.publish(msg)
+                self.last_teleop=time.monotonic()
+                self.last_motion_active=(abs(linear)>1e-6 or abs(angular)>1e-6)
+                return {'sent':True,'session':session}
         if name=='localization_confirm':
             with self.lock:
                 pose=self.state.get('robot_map')
@@ -995,6 +1066,7 @@ class Adapter:
             if self.fire_hold: raise ValueError('Fire controller still requests hold; check /fire_inspection/state')
             return {'cleared':True,'message':response.message}
         if name=='patrol_start':
+            if self.teleop_armed:raise ValueError('Release manual teleop before starting patrol')
             if self.patrol_thread and self.patrol_thread.is_alive():raise ValueError('Patrol already active')
             if self.fire_hold:raise ValueError('Fire hold active. Clear the fire warning/confirmation before starting patrol.')
             # Continue on the browser is a local UI decision. At patrol START,
@@ -1012,10 +1084,14 @@ class Adapter:
             self.patrol_thread=threading.Thread(target=self.mission_runner,args=(mission,),daemon=True)
             self.patrol_thread.start();return {'accepted':True}
         if name=='patrol_pause':
+            if self.teleop_armed or not (self.patrol_thread and self.patrol_thread.is_alive()):
+                raise ValueError('No active Patrol to pause')
             self.pause.set();self.client.cancel_all_goals()
             emit('event',message='Patrol paused; navigation goal cancelled')
             return {'paused':True}
         if name=='patrol_resume':
+            if self.teleop_armed or not (self.patrol_thread and self.patrol_thread.is_alive()) or not self.pause.is_set():
+                raise ValueError('No paused Patrol to resume; use Start after manual control')
             if self.fire_hold:raise ValueError('Fire hold active. Clear the fire warning/confirmation before resuming patrol.')
             self.pause.clear()
             emit('event',message='Patrol resumed')

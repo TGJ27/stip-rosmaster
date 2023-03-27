@@ -137,6 +137,54 @@ async function openFireEvent(eventId){
     modal('Fire Confirmation',html);
 }
 
+// MQ-6 percent alarm is evaluated by the Jetson server even with no browser.
+let gasSoundEnabled=false, gasAudioContext=null, gasLastBeep=0;
+async function loadGasAlarmSettings(){
+    const loaded=$('#gasAlarmSettingsLoaded');if(!loaded || loaded.value)return;
+    loaded.value='loading';
+    try{
+        const result=await get('gas_alarm_settings');
+        if($('#gasAlarmThresholdInput'))$('#gasAlarmThresholdInput').value=result.values.threshold_percent.toFixed(1);
+        loaded.value='ready';
+        if($('#gasAlarmSettingsHint'))$('#gasAlarmSettingsHint').textContent='Threshold saved on Jetson. Applies immediately; no ROS restart.';
+    }catch(e){loaded.value='';if($('#gasAlarmSettingsHint'))$('#gasAlarmSettingsHint').textContent=e.message;}
+}
+async function saveGasAlarmSettings(){
+    const value=Number($('#gasAlarmThresholdInput').value);
+    if(!Number.isFinite(value) || value<1 || value>300)return toast('Gas change threshold must be 1–300%',true);
+    const result=await safe('gas_alarm_settings_set',{threshold_percent:value});
+    if(result){toast('MQ-6 alarm threshold set to '+result.threshold_percent+'% ADC change');}
+}
+function formatGasAlarmStatus(){
+    const a=state.status.gas_alarm||{};
+    if(a.active)return 'ALARM · '+(a.change_percent===null?'sensor unavailable':a.change_percent+'% Δ');
+    if(a.status==='SENSOR_UNAVAILABLE'||a.status==='WAITING_FOR_SENSOR')return 'Sensor / baseline unavailable';
+    return 'Normal · '+(a.change_percent===null?'—':a.change_percent+'% Δ');
+}
+function updateGasAlarmIndicator(){
+    const data=state.status.gas_alarm||{},banner=$('#gasAlarmBanner');if(!banner)return;
+    banner.hidden=!data.active;
+    const title=$('#gasAlarmBannerText');if(title && data.active)title.textContent='MQ-6 GAS CHANGE ALARM · '+data.threshold_percent+'% threshold';
+    const detail=$('#gasAlarmBannerStatus');if(detail && data.active)detail.textContent=data.status==='ALARM_SENSOR_UNAVAILABLE'?'Sensor offline — gas alarm retained':data.change_percent+'% above clean-air ADC baseline · POP32i buzzer '+(data.hardware_ack===true?'ON':data.hardware_ack===false?'waiting for ACK':'unknown');
+    const b=$('#gasSoundButton');if(b)b.textContent=gasSoundEnabled?'Mute browser sound':'Enable browser sound';
+    if(data.active && gasSoundEnabled && Date.now()-gasLastBeep>2300){gasLastBeep=Date.now();beepGasBrowser();}
+}
+async function toggleGasSound(){
+    gasSoundEnabled=!gasSoundEnabled;
+    if(gasSoundEnabled){
+        try{const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Web Audio unavailable');gasAudioContext=gasAudioContext||new C();await gasAudioContext.resume();beepGasBrowser();}
+        catch(e){gasSoundEnabled=false;toast('Browser audio unavailable: '+e.message,true);}
+    }
+    updateGasAlarmIndicator();
+}
+function beepGasBrowser(){
+    if(!gasAudioContext || gasAudioContext.state!=='running')return;
+    const tone=gasAudioContext.createOscillator(),vol=gasAudioContext.createGain();
+    tone.type='sine';tone.frequency.value=880;vol.gain.value=.055;
+    tone.connect(vol);vol.connect(gasAudioContext.destination);
+    tone.start();tone.stop(gasAudioContext.currentTime+.16);
+}
+
 // Existing fire-inspection ROS timing parameters, loaded from native inspection.yaml.
 async function loadTrackingSpeed(){
     const hidden=$('#trackingSettingsLoaded');if(!hidden || hidden.value)return;

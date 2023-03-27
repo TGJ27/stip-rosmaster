@@ -32,6 +32,7 @@ from inspection_gallery import list_inspection_runs, load_inspection_image
 from qr_profiles import get_profile, profile_image
 from fire_settings import read_thresholds, write_thresholds
 from tracking_settings import read_tracking, save_tracking
+from gas_alarm import GasAlarm
 from fire_events import list_events, image as fire_event_image
 
 
@@ -46,6 +47,9 @@ class App:
         self.qr_profile_dir=self.inspection_base/'profiles'
         self.processes=Processes()
         self.bridge=ROSBridge()
+        self.gas_alarm=GasAlarm(Path(args.data_dir)/'settings'/'gas_alarm.json')
+        self.gas_command_sent=None
+        self.gas_command_at=0.0
         self.lock=threading.RLock()
         self.engine=args.engine
         self.system_started=False
@@ -55,13 +59,42 @@ class App:
         self.token=os.environ.get('STIP_DASHBOARD_TOKEN','')
         self.session=secrets.token_urlsafe(40)
         # Local-network mode: no token unless STIP_DASHBOARD_TOKEN is explicitly set.
+        threading.Thread(target=self.gas_alarm_loop,daemon=True).start()
+
+    def gas_alarm_loop(self):
+        """MQ-6 safety-adjacent indication runs even with no browser open."""
+        while not self.bridge.stopping:
+            try:
+                ros=dict(self.bridge.state)
+                edge=self.gas_alarm.evaluate(ros)
+                status=self.gas_alarm.snapshot()
+                active=status['active']
+                hardware=ros.get('gas_alarm_state')
+                eligible=status['status'] in ('NORMAL','ALARM')
+                # A sensor failure never authorizes sending an ALARM OFF.
+                should_send=(edge is not None or (eligible and hardware is not None and hardware!=active))
+                if should_send and (edge is not None or time.monotonic()-self.gas_command_at>=4):
+                    self.gas_command_at=time.monotonic()
+                    try:
+                        self.bridge.command('gas_alarm',{'enabled':active},timeout=2)
+                        self.gas_command_sent=active
+                        if edge is not None:
+                            message='MQ-6 relative ADC alarm {}: {}% vs threshold {}%'.format(
+                                'ON' if active else 'OFF',status['change_percent'],status['threshold_percent'])
+                            self.logs.append(message)
+                    except Exception as exc:
+                        self.logs.append('MQ-6 alarm command pending/rejected: '+str(exc)[:140])
+            except Exception as exc:
+                self.logs.append('MQ-6 alarm monitor error: '+str(exc)[:140])
+            time.sleep(0.4)
+
 
     def diagnostic(self):
         state=dict(self.bridge.state)
         if self.bridge.last_heard and time.monotonic()-self.bridge.last_heard>5:
             state={'connected':False,'error':'ROS heartbeat stale'}
-        return {'ros':state,'processes':self.processes.status(),
-                'events':list(self.bridge.events)[-25:]+list(self.processes.logs)[-45:],
+        return {'ros':state,'gas_alarm':dict(self.gas_alarm.snapshot(),hardware_ack=state.get('gas_alarm_state')),'processes':self.processes.status(),
+                'events':list(self.bridge.events)[-25:]+list(self.processes.logs)[-45:]+list(self.logs)[-25:],
                 'engine':self.engine,'power_enabled':self.power_enabled, 'maps_directory':str(self.repos.maps_dir),
                 'map':self.bridge.map_meta,'time':int(time.time())}
 
@@ -355,6 +388,11 @@ class App:
             return {'stopped':True,'navigation_stopped':True}
         if kind=='fire_thresholds_set':return self.update_fire_thresholds(payload)
         if kind=='tracking_speed_set':return self.update_tracking_speed(payload)
+        if kind=='gas_alarm_settings_set':return self.gas_alarm.save(payload['threshold_percent'])
+        if kind=='patrol_takeover':
+            if not self.processes.status().get('navigation',{}).get('running'):
+                raise ValueError('Navigation must be started to use Patrol manual drive')
+            return self.bridge.command('patrol_takeover',{},timeout=5)
         if kind=='save_mission':return self.repos.save(payload['mission'])
         if kind=='delete_mission':
             self.repos.delete_mission(payload['id']);return {'deleted':True}
@@ -470,6 +508,7 @@ class Handler(BaseHTTPRequestHandler):
             if url=='/api/missions':return self.output({'missions':app.repos.list_missions()})
             if url=='/api/fire_thresholds':return self.output({'values':read_thresholds(app.detector_config()),'requires_restart':True})
             if url=='/api/tracking_speed':return self.output({'values':read_tracking(app.tracking_config()),'requires_restart':True})
+            if url=='/api/gas_alarm_settings':return self.output({'values':app.gas_alarm.snapshot(),'requires_restart':False})
             if url=='/api/fire_events':return self.output({'events':list_events(app.fire_event_dir)})
             evidence=re.fullmatch(r'/api/fire_events/(fire_[0-9]{8}_[0-9]{6}_[0-9a-f]{8})/(rgb|thermal)\.jpg',url)
             if evidence:

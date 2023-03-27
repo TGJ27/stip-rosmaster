@@ -122,3 +122,15 @@
 .float.patrol-monitor .floathead,.float.patrol-activity .floathead{cursor:default}
 
 /* The calibrated overlay is already composed as one full RGB-frame image by ROS. */
+
+
+/* Patrol manual drive shares the existing hold-to-drive watchdog UI. */
+.float.patrol-teleop{bottom:13px;left:50%;right:auto;transform:translateX(-50%);width:min(535px,calc(100% - 685px));max-height:225px;}
+.float.patrol-teleop .floatbody{overflow:auto}
+.float.patrol-teleop .teleop-row{gap:12px}
+.float.patrol-teleop .dpad{grid-template-columns:repeat(3,34px);gap:3px}
+.float.patrol-teleop .dpad .btn{height:33px;min-height:33px}
+.gas-alarm-banner:not([hidden]){position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:80;max-width:calc(100vw - 24px);display:flex;align-items:center;gap:9px;flex-wrap:wrap;border:2px solid #ffad60;background:#652525;color:white;padding:10px 13px;border-radius:9px;box-shadow:0 6px 25px #000b;font-size:12px;}
+.gas-alarm-banner .btn{background:#ffd49b;color:#281b15}
+@media(max-width:1120px){.float.patrol-teleop{width:min(340px,calc(100% - 620px))}.float.patrol-teleop .teleop-row{flex-wrap:wrap}}
+@media(max-width:750px){.float.patrol-teleop{width:min(420px,calc(100% - 24px));bottom:11px;max-height:200px}.float.patrol-activity{bottom:220px}}
