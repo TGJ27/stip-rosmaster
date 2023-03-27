@@ -40,6 +40,8 @@ class FireInspection:
         with open(self.alignment_file) as f:
             self.h, self.refw, self.refh = load_homography(yaml.safe_load(f))
         self.min_conf = float(p('min_ai_confidence', .40))
+        # Align immediate alarm candidate filtering with RGB detector's 0.25 fire threshold.
+        self.direct_alarm_ai_confidence = float(p('direct_alarm_ai_confidence',0.25))
         self.ai_min = max(2,int(p('min_unique_ai_frames',2)))
         self.ai_age_limit = float(p('max_ai_age_sec', .80))
         self.hold = float(p('candidate_hold_sec',1.5))
@@ -48,6 +50,12 @@ class FireInspection:
         self.verify_timeout = float(p('verify_timeout_sec',8.0))
         self.required_hot = max(2,int(p('required_hot_frames',3)))
         self.hot_min = float(p('min_hot_c',65))
+        # Immediate fire warning: one fresh calibrated fire-region thermal sample.
+        # This path does NOT wait for arm aiming, settling, multiple AI frames,
+        # temperature/background delta, or the long inspection timeout.
+        self.direct_alarm_hot_c = float(p('direct_alarm_hot_c',70.0))
+        self.direct_alarm_min_hot_pixels = max(1,int(p('direct_alarm_min_hot_pixels',1)))
+        self.direct_alarm_scope = str(p('direct_alarm_scope','thermal_fov'))
         self.delta_min = float(p('min_above_background_c',15))
         self.min_roi_pixels = max(1, int(p('min_roi_pixels',3)))
         self.min_hot_pixels = max(2, int(p('min_hot_pixels',2)))
@@ -90,6 +98,10 @@ class FireInspection:
                 self.pan_min < self.pan_max and self.tilt_min < self.tilt_max and
                 0 < self.top_percentile <= 100 and
                 0 < self.target_filter_alpha <= 1.0 and
+                0 < self.direct_alarm_hot_c <= 300 and
+                0.0 < self.direct_alarm_ai_confidence <= 1.0 and
+                1 <= self.direct_alarm_min_hot_pixels <= 768 and
+                self.direct_alarm_scope in ('thermal_fov','target_roi') and
                 1 <= self.alarm_clear_sec <= 60 and
                 -40 < self.alarm_clear_below_c < self.hot_min and
                 0.2 <= self.buzzer_refresh_sec <= 10.0):
@@ -138,6 +150,7 @@ class FireInspection:
         self.hardware_ack = False
         self.last_buzzer_pub = 0.0
         self.alarm_latched = False
+        self.alarm_reason = ''
         self.warned_no_arm = False
         self.last_diag = 0.0
         self.hot_stats = None
@@ -169,7 +182,8 @@ class FireInspection:
                       'ON' if self.aim_enabled else 'OFF', 'ON' if self.pop_buzzer else 'OFF')
 
     def on_detection(self, msg):
-        d = parse_detections(msg.data,self.ai_age_limit,self.min_conf)
+        d = parse_detections(msg.data,self.ai_age_limit,
+                             min(self.min_conf,self.direct_alarm_ai_confidence))
         now = time.monotonic()
         if d is None:
             return
@@ -404,6 +418,10 @@ class FireInspection:
             'target_filter_alpha':self.target_filter_alpha,
             'pop32i_buzzer_enabled':self.pop_buzzer,'buzzer_ack':self.hardware_ack,
             'roi_temperature':self.hot_stats,
+            'direct_alarm_hot_c':self.direct_alarm_hot_c,
+            'direct_alarm_ai_confidence':self.direct_alarm_ai_confidence,
+            'direct_alarm_scope':self.direct_alarm_scope,
+            'alarm_reason':self.alarm_reason,
         },sort_keys=True)))
 
     def command_buzzer(self, on, now):
@@ -424,6 +442,7 @@ class FireInspection:
         """Clear only this package's confirmed-fire alarm and rearm tracking."""
         now = time.monotonic()
         self.alarm_latched = False
+        self.alarm_reason = ''
         if self.buzzer_owned:
             self.command_buzzer(False, now)
         self.state = new_state
@@ -536,6 +555,62 @@ class FireInspection:
         else:
             self.publish_status()
 
+    def check_immediate_fire_alarm(self,now):
+        """Latch on a fresh RGB fire in the thermal FoV and native thermal >=70 C.
+
+        Uses native 32x24 Celsius measurements, never a colorized preview.
+        The fire's projected location must overlap the calibrated thermal FoV.
+        In thermal_fov mode, any pixel in this FoV reaching the threshold is
+        sufficient; target_roi mode additionally requires heat in the fire ROI.
+        This early path deliberately does not depend on camera-arm state,
+        multi-frame counters, or the slower verification timeout. Both inputs
+        must still be fresh and the thermal sensor must report healthy.
+        """
+        if (self.target is None or not self.last_target or
+                self.last_target_details != 'fire' or self.no_fire_frames != 0 or
+                self.ai_last <= 0 or self.ai_unique_recv <= 0 or
+                now-self.ai_last > self.ai_age_limit or
+                now-self.ai_unique_recv > self.ai_age_limit or
+                self.thermal_frame is None or self.thermal_seq < 1 or
+                now-self.thermal_recv > self.thermal_age or
+                (self.had_thermal_health and not self.thermal_healthy)):
+            return False
+        source=self.last_target
+        # Check every actual fire detection, not merely the one currently
+        # selected for camera-arm tracking. All must pass saved homography.
+        for detected in source['boxes']:
+            if detected['class_id'] != 0:
+                continue
+            roi=analyze_target(self.thermal_frame,detected['box'],
+                               self.h,self.refw,self.refh,
+                               source['width'],source['height'],
+                               1,self.top_percentile,
+                               self.direct_alarm_hot_c)
+            if roi is None:  # fire is outside the calibrated thermal FoV
+                continue
+            if self.direct_alarm_scope == 'thermal_fov':
+                hot_c=float(self.thermal_frame.max())
+                hot_pixels=int(np.count_nonzero(self.thermal_frame>=self.direct_alarm_hot_c))
+            else:
+                hot_c=roi['max_c']
+                hot_pixels=roi['hot_pixels']
+            if hot_c < self.direct_alarm_hot_c or hot_pixels < self.direct_alarm_min_hot_pixels:
+                continue
+            self.target=detected
+            self.smoothed_center=detected['center']
+            self.hot_stats=roi
+            self.temp_pub.publish(Float32(data=hot_c))
+            self.ambient_pub.publish(Float32(data=roi['background_c']))
+            self.alarm_latched=True
+            self.alarm_reason='DIRECT_RGB_FIRE_'+self.direct_alarm_scope.upper()
+            self.state='CONFIRMED_DIRECT_HOT'
+            rospy.logerr('IMMEDIATE FIRE ALARM: aligned RGB fire target %.1f C (threshold %.1f C, %d hot native pixels)',
+                         hot_c,self.direct_alarm_hot_c,hot_pixels)
+            self.command_buzzer(True,now)
+            self.publish_status()  # /alarm_requested -> existing POP32i gas bridge
+            return True
+        return False
+
     def tick(self,_event):
         with self.lock:
             now=time.monotonic()
@@ -543,6 +618,10 @@ class FireInspection:
                 self.tick_confirmed(now)
                 return
             self.refresh_buzzer(now)
+            # Immediate alarm is evaluated BEFORE arm aiming, frame counters
+            # and verify timeout; otherwise a 70+ C target can remain unverified.
+            if self.check_immediate_fire_alarm(now):
+                return
             fire_fresh=(self.target is not None and self.ai_streak>=self.ai_min and now-self.ai_last<self.hold
                         and self.no_fire_frames==0)
             smoke=(self.last_target_details=='smoke' and self.last_result and

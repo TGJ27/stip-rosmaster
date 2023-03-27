@@ -155,13 +155,12 @@ async function flushTeleop() {
     } catch(e) {
         // Never keep issuing commands after the ROS worker rejects control.
         const wasMoving=!!state.held;
-        state.held=null;state.teleop=false;teleopSession=null;
+        // A lost HTTP packet is not an operator disarm request. Stop the
+        // held command and let the 600 ms ROS watchdog issue motor zero.
+        // ROS status reconciliation will revoke the session if necessary.
+        state.held=null;
         clearInterval(moveTimer);moveTimer=null;teleopStopPending=false;
-        toast('Teleop disarmed: '+e.message,true);
-        // Backend owns safety; explicitly request a zero-velocity disarm.
-        act('teleop_arm',{enabled:false},2000).catch(()=>{});
-        const button=document.querySelector('#fp_teleop button, #fp_missionteleop button, #fp_patrolteleop button');
-        if (button) {button.textContent='Enable Teleop';button.classList.remove('red');button.classList.add('blue');}
+        toast('Teleop command interrupted; motion stopped. Control stays armed unless ROS reports a revocation: '+e.message,true);
     } finally {
         teleopSending=false;
         if (teleopStopPending && state.teleop) flushTeleop();
@@ -179,14 +178,19 @@ document.addEventListener('keydown', e => { if (/input|textarea|select/i.test(e.
 } });
 document.addEventListener('keyup', e => { if (e.key.toLowerCase() === state.held)
     releaseTeleop(); });
-function loseFocus() { stopQrArm(); releaseTeleop(); if (state.teleop) {
-    state.teleop = false;teleopSession=null;
-    safe('teleop_arm', { enabled: false });
-} }
+function loseFocus() {
+    stopQrArm();
+    releaseTeleop();  // zero motion, keep the manual session armed
+}
 window.addEventListener('blur', loseFocus);
-document.addEventListener('visibilitychange', () => { if (document.hidden)
-    loseFocus(); });
-window.addEventListener('pagehide', loseFocus);
+document.addEventListener('visibilitychange', () => { if (document.hidden) loseFocus(); });
+window.addEventListener('pagehide', () => {
+    loseFocus();
+    if(state.teleop) {
+        state.teleop=false;teleopSession=null;
+        safe('teleop_arm',{enabled:false}); // leaving browser closes control session
+    }
+});
 // Saving a waypoint must NOT disarm a healthy manual session. A native
 // confirm() can trigger window blur/visibilitychange, which previously issued
 // teleop_arm(false). Use our non-blocking dashboard modal instead.

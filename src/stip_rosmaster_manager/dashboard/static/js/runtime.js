@@ -3,8 +3,17 @@ async function exitMission() {requestLeaveMission('mission','list');}
 async function startPatrol() { if(state.teleop)return toast('Release manual control before starting Patrol',true); if (!state.patrolMission)
     return; if (!state.localized) return toast('Confirm the robot pose before starting patrol', true); state.patrolMission.loop = !!state.patrolMission.loop; const r = await safe('patrol_start', { mission_id: state.patrolMission.id, loop: state.patrolMission.loop, operator_confirmed: true }); if (r)
     toast('Patrol start accepted'); }
-async function patrolCmd(cmd) { if(state.teleop && cmd!=='stop')return toast('Release manual teleop before continuing Patrol',true); if(cmd==='stop' && state.teleop){releaseTeleop();state.teleop=false;teleopSession=null;await safe('teleop_arm',{enabled:false});render();} const r = await safe(cmd); if (r)
-    toast('Command sent: ' + cmd); }
+async function patrolCmd(cmd) {
+    if(state.teleop && cmd!=='stop')return toast('Release manual teleop before continuing Patrol',true);
+    if(cmd==='stop') {
+        releaseTeleop(); // zero motor, but do not disarm the manual session
+        const r=await safe('stop_navigation_only');
+        if(r)toast('Navigation stopped; teleop '+(r.teleop_armed?'remains armed':'is off'));
+        return;
+    }
+    const r=await safe(cmd);
+    if(r)toast('Command sent: '+cmd);
+}
 async function qrToggle(enabled) { const r = await safe('qr_enable', { enabled }); if (r)
     state.qr = enabled; }
 async function fireClear() { if (!confirm('Acknowledge fire? Confirm the scene is clear and the robot remains safely stopped.'))
@@ -56,6 +65,12 @@ async function requestAutomaticFireTracking(){
 async function restartStage(s) { if (!confirm('Restart stage ' + s + ' using stage manager?'))
     return; const r = await safe('stage_restart', { stage: s }); if (r)
     toast('Restart requested: ' + s); }
+async function restartRobotSystem() {
+    if(!confirm('Stop navigation and restart ALL robot ROS stages (bringup, RGB, QR, fire, gas, thermal)? The web dashboard stays open. Robot must be stationary.'))return;
+    releaseTeleop();
+    const r=await safe('robot_system_restart');
+    if(r){state.teleop=false;teleopSession=null;toast('Robot system restart queued. Watch stage readiness; start navigation manually afterward.');}
+}
 async function systemStart() { const r = await safe('start_system'); if (r)
     toast('System launch started; waiting for readiness'); }
 async function systemStop() { if (!confirm('Stop managed ROSMASTER system?'))

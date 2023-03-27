@@ -370,7 +370,8 @@ class Adapter:
             self.state['warning'] = bool(requested and monitored)
             self.state['fire_hold_reason'] = reason
         if active and not was_active:
-            self.stop_motion()  # Cancels goals, drives zero, and pauses work.
+            self.stop_motion(disarm_teleop=False)  # cancel NAV, preserve armed idle teleop
+            self.patrol_halt.set()  # never resume the cancelled goal automatically
             self.pause_ack.publish(Bool(data=True))
             emit('event', message='Fire inspection requested a motion hold: '+reason)
         elif was_active and not active:
@@ -410,11 +411,13 @@ class Adapter:
                 'timestamp':time.strftime('%H:%M:%S')})
         self.sync_fire_hold()
 
-    def stop_motion(self):
-        # STOP wins over an in-flight teleop HTTP/RPC request.
+    def stop_motion(self, disarm_teleop=True):
+        # Emergency STOP disarms, but navigation cancellation and a fire hold
+        # preserve the operator's armed session while stopping every motor.
         with self.motion_lock:
-            self.teleop_armed=False
-            self.teleop_session+=1
+            if disarm_teleop:
+                self.teleop_armed=False
+                self.teleop_session+=1
             self.last_motion_active=False
             self.pause.set()
             self.goal_cancel.set()
@@ -876,6 +879,19 @@ class Adapter:
     def handle(self, name, payload):
         if name=='ping':return {'ros':True}
         if name=='stop':self.stop_motion();self.patrol_halt.set();return {'stopped':True}
+        if name=='stop_navigation_only':
+            self.stop_motion(disarm_teleop=False)
+            self.patrol_halt.set()
+            runner=self.patrol_thread
+            if runner and runner.is_alive() and runner is not threading.current_thread():
+                runner.join(timeout=2.5)
+                if runner.is_alive():
+                    raise ValueError('Navigation goal cancelled, but Patrol worker is still stopping')
+            with self.lock:
+                self.state['mission']['state']='STOPPED'
+                self.state['mission']['task']=''
+                self.state['nav']='STOPPED'
+            return {'stopped':True,'teleop_armed':self.teleop_armed,'session':self.teleop_session}
         if name=='gas_alarm':
             enabled=bool(payload.get('enabled'))
             self.gas_alarm_pub.publish(Bool(data=enabled))
@@ -885,7 +901,7 @@ class Adapter:
                 raise ValueError('Fire hold/warning active; manual motion is blocked')
             # Stop existing move_base execution permanently. Restarting Patrol
             # after manual driving begins the mission from its first waypoint.
-            self.stop_motion()
+            self.stop_motion(disarm_teleop=False)
             self.patrol_halt.set()
             runner=self.patrol_thread
             if runner and runner.is_alive():
@@ -973,6 +989,11 @@ class Adapter:
         if name=='qr_capture':return self.qr_capture(payload)
         if name=='qr_prepare':return self.qr_prepare(payload)
         if name=='qr_probe':return self.qr_probe()
+        if name=='robot_system_restart':
+            rospy.wait_for_service('/stip/startup/restart_robot', timeout=3)
+            reply=rospy.ServiceProxy('/stip/startup/restart_robot',Trigger)()
+            if not reply.success:raise ValueError(reply.message)
+            return {'accepted':True,'message':reply.message}
         if name=='stage_restart':
             stage=payload['stage']
             if stage=='bringup':service='/stip/startup/retry_bringup'

@@ -50,6 +50,11 @@ class Manager:
         self._shutdown_lock = threading.Lock()
         self._shutdown_completed = False
         self.restart_requests = set()
+        self.stage_operation_lock = threading.RLock()  # serialize child-stage starts and full restarts
+        self.robot_restart_requested = threading.Event()
+        self.confirmed_fire = False
+        self.thermal_recovery_after = 0.0
+        self.thermal_recovery_backoff = 45.0
         self.bringup_status = ""
         self.bringup_msg_time = 0.0
         self.bringup_ready = False
@@ -111,6 +116,8 @@ class Manager:
         self.heartbeat_timer = rospy.Timer(rospy.Duration(1.0),
                                            self.heartbeat_tick)
         rospy.Subscriber("/bringup_status", String, self.bringup_callback, queue_size=10)
+        rospy.Subscriber('/fire_inspection/confirmed', Bool,
+                         lambda m: setattr(self, 'confirmed_fire', bool(m.data)), queue_size=1)
         rospy.Subscriber("/stip/inspection_ui/ready", Bool,
                          lambda msg: setattr(self, "ui_ready", bool(msg.data)), queue_size=1)
         rospy.Subscriber("/stip/inspection_ui/frame_ready", Bool,
@@ -122,6 +129,7 @@ class Manager:
             rospy.Subscriber(topic, Bool, self.make_health_callback(module), queue_size=1)
         rospy.Service("/stip/startup/retry_bringup", Trigger, self.manual_bringup)
         rospy.Service("/stip/startup/shutdown", Trigger, self.request_shutdown)
+        rospy.Service("/stip/startup/restart_robot", Trigger, self.request_restart_robot)
         for stage in ("ui", "camera", "qr", "fire", "gas", "thermal"):
             rospy.Service("/stip/modules/restart_" + stage, Trigger,
                           self.make_restart_callback(stage))
@@ -216,6 +224,47 @@ class Manager:
         if self.initiate_shutdown("Q pressed in inspection UI"):
             return TriggerResponse(True, "Graceful shutdown accepted; recovery disabled")
         return TriggerResponse(True, "Shutdown already in progress")
+
+    def request_restart_robot(self, _req):
+        if self.stopped.is_set():
+            return TriggerResponse(False, 'Stage manager is shutting down')
+        if self.robot_restart_requested.is_set():
+            return TriggerResponse(False, 'Robot restart already queued')
+        if self.confirmed_fire:
+            return TriggerResponse(False, 'Confirmed fire active: system restart refused to preserve alarm hold')
+        # Acknowledgement means the serialized restart was queued, not READY.
+        self.robot_restart_requested.set()
+        self.ready_pub.publish(Bool(data=False))
+        self.all_ready_pub.publish(Bool(data=False))
+        self.stop_vel_pub.publish(Twist())
+        return TriggerResponse(True, 'Robot stage restart queued; dashboard/ROS master remain online')
+
+    def restart_robot_stages(self):
+        # Serialized supervisor-thread restart; preserve dashboard and UI.
+        self.bringup_ready = False
+        self.ready_pub.publish(Bool(data=False))
+        self.all_ready_pub.publish(Bool(data=False))
+        self.stop_vel_pub.publish(Twist())
+        # Wait for any in-flight optional-stage startup before killing groups,
+        # otherwise it could respawn a sensor halfway through this restart.
+        with self.stage_operation_lock:
+            for stage in ('thermal','gas','fire','qr','camera','bringup'):
+                self.set_state(stage, 'RESTARTING', 'Restart requested by operator')
+                self.stop_process(stage)
+        with self.lock:
+            self.optional_health = {m: (False, 0.0) for m in OPTIONAL_STAGES}
+            self.restart_requests.clear()
+            self.camera_valid = False
+            self.camera_seen_time = 0.0
+        # Optional threads wait until bringup READY and restart from WAITING.
+        for stage in OPTIONAL_STAGES:
+            self.set_state(stage,'WAITING_FOR_BRINGUP','Restarting after bringup')
+        if self.wait_bringup():
+            for stage in ('camera','qr','fire'):
+                if not self.auto_retry_stage(stage):
+                    rospy.logwarn('Robot restart: %s stage not ready',stage)
+        else:
+            rospy.logerr('Robot restart: bringup is BLOCKED; use manual retry')
 
     def manual_bringup(self, _req):
         if self.stopped.is_set():
@@ -367,6 +416,10 @@ class Manager:
                     proc.communicate()
 
     def try_stage(self, stage):
+        with self.stage_operation_lock:
+            return self._try_stage_serialized(stage)
+
+    def _try_stage_serialized(self, stage):
         self.stop_process(stage)
         if stage in OPTIONAL_STAGES:
             with self.lock:
@@ -413,6 +466,8 @@ class Manager:
             return False
         attempt = 0
         while not rospy.is_shutdown() and not self.stopped.is_set():
+            if stage in OPTIONAL_STAGES and self.robot_restart_requested.is_set():
+                return False
             if stage != "ui" and not self.bringup_ready:
                 return False
             if stage not in ("ui", "bringup", "gas", "thermal"):
@@ -429,6 +484,9 @@ class Manager:
                 if self.stopped.is_set():
                     return False
                 self.set_state(stage, "READY", result)
+                if stage == 'thermal':
+                    self.thermal_recovery_after = 0.0
+                    self.thermal_recovery_backoff = 45.0
                 return True
             except Exception as exc:
                 if self.stopped.is_set():
@@ -439,7 +497,12 @@ class Manager:
                 if self.stopped.is_set():
                     return False
                 if stage in LIMITED_STAGES and attempt >= self.max_start_attempts:
-                    self.set_state(stage, "BLOCKED", "{} failed starts; manual restart required".format(attempt))
+                    if stage == 'thermal':
+                        self.thermal_recovery_after = time.monotonic() + self.thermal_recovery_backoff
+                        self.set_state(stage, 'BLOCKED', 'Cooling down {:.0f}s before auto-retry'.format(self.thermal_recovery_backoff))
+                        self.thermal_recovery_backoff = min(300.0, self.thermal_recovery_backoff * 2)
+                    else:
+                        self.set_state(stage, "BLOCKED", "{} failed starts; manual restart required".format(attempt))
                     return False
                 self.set_state(stage, "RETRYING", "attempt {} in {:.0f}s".format(
                     attempt + 1, self.retry_delay))
@@ -491,6 +554,9 @@ class Manager:
     def optional_supervise(self, stage):
         """Independent worker: sensor failure never stalls base/QR/fire or peers."""
         while not rospy.is_shutdown() and not self.stopped.is_set():
+            if self.robot_restart_requested.is_set():
+                self.stopped.wait(0.3)
+                continue
             # ROSMASTER_LAUNCHER_V1_GATED: both optional sensors wait for a
             # VERIFIED bringup READY before consuming any retry attempt.
             if not self.bringup_ready:
@@ -509,6 +575,11 @@ class Manager:
                 self.auto_retry_stage(stage)
             elif self.states[stage] in ("WAITING", "WAITING_FOR_BRINGUP"):
                 self.auto_retry_stage(stage)
+            elif stage == 'thermal' and self.states[stage] == 'BLOCKED' and time.monotonic() >= self.thermal_recovery_after:
+                # Bounded self-healing after the three short retry attempts.
+                # This avoids a permanently dead camera without a restart storm.
+                self.set_state(stage, 'RESTARTING', 'Automatic thermal retry after cooldown')
+                self.auto_retry_stage(stage)
             elif self.states[stage] == "READY" and (
                 NODES[stage] not in self.alive_nodes() or
                 (self.processes.get(stage) and self.processes[stage].poll() is not None) or
@@ -520,6 +591,17 @@ class Manager:
 
     def supervise(self):
         while not rospy.is_shutdown() and not self.stopped.is_set():
+            if self.robot_restart_requested.is_set():
+                try:
+                    self.restart_robot_stages()
+                except Exception as exc:
+                    self.bringup_ready=False
+                    self.ready_pub.publish(Bool(data=False))
+                    rospy.logerr('Robot stage restart failed: %s',exc)
+                    self.set_state('bringup','BLOCKED','Restart error: '+str(exc)[:160])
+                finally:
+                    self.robot_restart_requested.clear()
+                continue
             with self.lock:
                 requested = self.restart_requests.intersection(CORE_STAGES)
                 self.restart_requests.difference_update(requested)

@@ -10,6 +10,8 @@ import os
 import queue
 import statistics
 import time
+import threading
+import threading
 from pathlib import Path
 
 import rospy
@@ -34,6 +36,13 @@ class GasBridge:
         self.last_status = 0.0
         self.connection_seen = False
         self.alarm_on = False
+        # One serial alarm owner: gas and confirmed fire are independent requests.
+        # A false gas request MUST NOT silence an active confirmed fire.
+        self.alarm_lock = threading.RLock()
+        self.alarm_requests = {'gas': False, 'fire': False}
+        self.alarm_seen = {'gas': False, 'fire': False}
+        self.desired_alarm = None  # unknown until source state received
+        self.last_alarm_tx = 0.0
 
         self.raw_pub = rospy.Publisher('/gas_sensor/raw', Int32, queue_size=10)
         self.health_pub = rospy.Publisher('/gas_sensor/healthy', Bool, queue_size=1)
@@ -43,7 +52,11 @@ class GasBridge:
         self.change_pub = rospy.Publisher('/gas_sensor/change_percent', Float32, queue_size=10)
         self.cal_pub = rospy.Publisher('/gas_sensor/calibration_status', String, queue_size=1, latch=True)
         self.alarm_status_pub = rospy.Publisher('/gas_sensor/alarm_state', Bool, queue_size=1, latch=True)
+        self.alarm_sources_pub = rospy.Publisher('/gas_sensor/alarm_sources', String, queue_size=1, latch=True)
         rospy.Subscriber('/gas_sensor/alarm_cmd', Bool, self.alarm_callback, queue_size=10)
+        # Fire-inspection's latched /alarm_requested is the authoritative fusion output.
+        # Keep fire_inspection enable_pop32i_buzzer=false: only this bridge owns UART.
+        rospy.Subscriber('/fire_inspection/alarm_requested', Bool, self.fire_alarm_callback, queue_size=5)
         rospy.Subscriber('/gas_sensor/beep_ms', UInt16, self.beep_callback, queue_size=10)
         rospy.Service('/gas_sensor/calibrate', Trigger, self.calibrate_callback)
         if self.baseline is not None:
@@ -69,7 +82,48 @@ class GasBridge:
         return None
 
     def alarm_callback(self, msg):
-        self.enqueue('ALARM,ON' if msg.data else 'ALARM,OFF')
+        self.set_alarm_source('gas', bool(msg.data))
+
+    def fire_alarm_callback(self, msg):
+        self.set_alarm_source('fire', bool(msg.data))
+
+    def set_alarm_source(self, source, enabled):
+        """Aggregate alarm sources, never send OFF while another is active.
+
+        A missing fire controller is NOT evidence that a previously active fire
+        has cleared. After a bridge restart, require its first state before OFF.
+        """
+        with self.alarm_lock:
+            self.alarm_seen[source] = True
+            self.alarm_requests[source] = enabled
+            wanted = any(self.alarm_requests.values())
+            self.alarm_sources_pub.publish(String(data=json.dumps({
+                'fire': self.alarm_requests['fire'], 'gas': self.alarm_requests['gas'],
+                'combined': wanted, 'fire_state_received': self.alarm_seen['fire']
+            }, sort_keys=True)))
+            if wanted:
+                if self.desired_alarm is not True:
+                    self.desired_alarm = True
+                    self.enqueue('ALARM,ON')
+                    self.last_alarm_tx = time.monotonic()
+            elif self.alarm_seen['fire'] and self.desired_alarm is True:
+                # Both sources explicitly clear; only now is UART OFF permitted.
+                self.desired_alarm = False
+                self.enqueue('ALARM,OFF')
+                self.last_alarm_tx = time.monotonic()
+            elif self.alarm_seen['fire'] and self.desired_alarm is None:
+                self.desired_alarm = False  # baseline: no gratuitous OFF on startup
+
+    def reconcile_alarm(self):
+        # A lost UART ACK or POP32i reboot must not silently lose a fire alarm.
+        with self.alarm_lock:
+            desired = self.desired_alarm
+            if desired is None or desired == self.alarm_on:
+                return
+            now = time.monotonic()
+            if now-self.last_alarm_tx >= 1.5:
+                self.enqueue('ALARM,ON' if desired else 'ALARM,OFF')
+                self.last_alarm_tx = now
 
     def beep_callback(self, msg):
         duration = int(msg.data)
@@ -173,6 +227,7 @@ class GasBridge:
         rospy.loginfo('MQ-6 bridge active; no automatic ppm/%sLEL alarm', '%')
         while not rospy.is_shutdown():
             now = time.monotonic()
+            self.reconcile_alarm()
             if now - self.last_ping >= 1.0:
                 self.transmit('PING')
                 self.last_ping = now

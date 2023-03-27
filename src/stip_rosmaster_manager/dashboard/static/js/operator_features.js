@@ -163,11 +163,16 @@ function formatGasAlarmStatus(){
 }
 function updateGasAlarmIndicator(){
     const data=state.status.gas_alarm||{},banner=$('#gasAlarmBanner');if(!banner)return;
-    banner.hidden=!data.active;
-    const title=$('#gasAlarmBannerText');if(title && data.active)title.textContent='MQ-6 GAS CHANGE ALARM · '+data.threshold_percent+'% threshold';
-    const detail=$('#gasAlarmBannerStatus');if(detail && data.active)detail.textContent=data.status==='ALARM_SENSOR_UNAVAILABLE'?'Sensor offline — gas alarm retained':data.change_percent+'% above clean-air ADC baseline · POP32i buzzer '+(data.hardware_ack===true?'ON':data.hardware_ack===false?'waiting for ACK':'unknown');
+    const fire=!!((state.status.ros||{}).confirmed);
+    banner.hidden=!(data.active||fire);
+    const title=$('#gasAlarmBannerText');
+    if(title && (data.active||fire))title.textContent=(fire?'CONFIRMED FIRE':'')+(fire&&data.active?' + ':'')+(data.active?'MQ-6 GAS CHANGE ALARM':'');
+    const detail=$('#gasAlarmBannerStatus');
+    if(detail && (data.active||fire))detail.textContent=(fire?'RGB + thermal fusion confirmed · ':'')+
+        (data.active?(data.status==='ALARM_SENSOR_UNAVAILABLE'?'Gas sensor offline; alarm retained · ':'Gas change '+data.change_percent+'% · '):'')+
+        'POP32i buzzer '+(data.hardware_ack===true?'ON':data.hardware_ack===false?'waiting for ACK':'unknown');
     const b=$('#gasSoundButton');if(b)b.textContent=gasSoundEnabled?'Mute browser sound':'Enable browser sound';
-    if(data.active && gasSoundEnabled && Date.now()-gasLastBeep>2300){gasLastBeep=Date.now();beepGasBrowser();}
+    if((data.active||fire) && gasSoundEnabled && Date.now()-gasLastBeep>2300){gasLastBeep=Date.now();beepGasBrowser();}
 }
 async function toggleGasSound(){
     gasSoundEnabled=!gasSoundEnabled;

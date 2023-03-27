@@ -72,7 +72,10 @@ class App:
                 hardware=ros.get('gas_alarm_state')
                 eligible=status['status'] in ('NORMAL','ALARM')
                 # A sensor failure never authorizes sending an ALARM OFF.
-                should_send=(edge is not None or (eligible and hardware is not None and hardware!=active))
+                # Hardware ACK represents combined FIRE or GAS; ACK=ON during fire
+                # is not a gas alarm mismatch and must never trigger gas OFF spam.
+                # Reassert a latched gas request even if its sensor goes offline.
+                should_send=(edge is not None or (active and hardware is not True))
                 if should_send and (edge is not None or time.monotonic()-self.gas_command_at>=4):
                     self.gas_command_at=time.monotonic()
                     try:
@@ -312,7 +315,7 @@ class App:
         if kind=='stop_navigation':
             # Navigation teardown must work even if the ROS adapter is stuck.
             # Always attempt to stop the dashboard-owned navigation process.
-            try:self.bridge.command('stop',timeout=2)
+            try:self.bridge.command('stop_navigation_only',timeout=2)
             except Exception as exc:self.processes.logs.append('Navigation stop ROS adapter unavailable: '+str(exc))
             self.active_nav_map=None
             return self.processes.stop('navigation')
@@ -396,6 +399,24 @@ class App:
         if kind=='save_mission':return self.repos.save(payload['mission'])
         if kind=='delete_mission':
             self.repos.delete_mission(payload['id']);return {'deleted':True}
+        if kind=='robot_system_restart':
+            if self.bridge.state.get('confirmed') or self.bridge.state.get('fire_hold'):
+                raise ValueError('Fire safety hold active: clear only after verifying the scene; restart refused')
+            if self.bridge.state.get('mission',{}).get('state') in ('RUNNING','PAUSED'):
+                raise ValueError('Stop the active Patrol before restarting robot subsystems')
+            # Prevent revived move_base from resending a goal after driver restart.
+            try:
+                self.bridge.command('stop',timeout=3)  # full hardware restart revokes teleop sessions
+            except Exception as exc:
+                raise ValueError('Cannot confirm robot zero-velocity stop: '+str(exc))
+            stopped={}
+            for component in ('navigation','mapping','fire_inspection','thermal_overlay','lidar'):
+                stopped[component]=self.processes.stop(component)
+            if not all(x.get('stopped') for x in stopped.values()):
+                raise ValueError('One or more dashboard-owned ROS stages could not be stopped; restart refused')
+            self.active_nav_map=None
+            result=self.bridge.command('robot_system_restart',{},timeout=6)
+            return dict(result, navigation_stopped=True, dashboard_preserved=True)
         if kind=='stage_restart':
             if self.bridge.state.get('mission',{}).get('state') in ('RUNNING','PAUSED'):
                 raise ValueError('Stop active patrol before restarting components')

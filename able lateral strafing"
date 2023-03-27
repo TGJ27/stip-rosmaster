@@ -1,0 +1,49 @@
+[1mdiff --git a/src/stip_rosmaster_bringup/scripts/Mcnamu_X3plus.py b/src/stip_rosmaster_bringup/scripts/Mcnamu_X3plus.py[m
+[1mindex b70c5c6..291f278 100755[m
+[1m--- a/src/stip_rosmaster_bringup/scripts/Mcnamu_X3plus.py[m
+[1m+++ b/src/stip_rosmaster_bringup/scripts/Mcnamu_X3plus.py[m
+[36m@@ -676,7 +676,8 @@[m [mclass yahboomcar_driver:[m
+         # 下发线速度和角速度[m
+         # Issue linear vel and angular vel[m
+         vx = msg.linear.x[m
+[31m-        vy = msg.linear.y[m
+[32m+[m[32m        vy = 0.0[m
+[32m+[m[32m        #vy = msg.linear.y[m
+         angular = msg.angular.z[m
+         # 小车运动控制,vel: ±1, angular: ±5[m
+         # Trolley motion control,vel=[-1, 1], angular=[-5, 5][m
+[1mdiff --git a/src/stip_rosmaster_nav/param/common/dwa_local_planner_params_X3plus.yaml b/src/stip_rosmaster_nav/param/common/dwa_local_planner_params_X3plus.yaml[m
+[1mindex 043b4f4..46e01c1 100644[m
+[1m--- a/src/stip_rosmaster_nav/param/common/dwa_local_planner_params_X3plus.yaml[m
+[1m+++ b/src/stip_rosmaster_nav/param/common/dwa_local_planner_params_X3plus.yaml[m
+[36m@@ -8,10 +8,10 @@[m [mDWAPlannerROS:[m
+   min_vel_x: 0.01[m
+   # y方向最大线速度绝对值，单位:米/秒。差速机器人为0 0.6[m
+   # The maximum y velocity for the robot in m/s[m
+[31m-  max_vel_y: 0.2 #0.3[m
+[32m+[m[32m  max_vel_y: 0.0 #0.3[m[41m[m
+   # y方向最小线速度绝对值，单位:米/秒。差速驱动机器人为0 0.6[m
+   # The minimum y velocity for the robot in m/s[m
+[31m-  min_vel_y: -0.2 #0.3[m
+[32m+[m[32m  min_vel_y: -0.0 #0.3[m[41m[m
+   # 机器人最大旋转速度的绝对值，单位为 rad/s 2.0[m
+   # The absolute value of the maximum rotational velocity for the robot in rad/s[m
+   max_rot_vel: 3.2 [m
+[36m@@ -41,7 +41,7 @@[m [mDWAPlannerROS:[m
+   acc_lim_x: 5.0 #10.0[m
+   # 机器人在y方向的极限加速度，差速机器人来说是0 10[m
+   # The y acceleration limit of the robot in meters/sec^2[m
+[31m-  acc_lim_y: 5.0 #10.0[m
+[32m+[m[32m  acc_lim_y: 0.0 #10.0[m[41m[m
+   # 机器人的极限旋转加速度，单位为 rad/sec^2[m
+   # The rotational acceleration limit of the robot in radians/sec^2[m
+   acc_lim_theta: 20.0[m
+[36m@@ -65,7 +65,7 @@[m [mDWAPlannerROS:[m
+   vx_samples: 10[m
+   # y方向速度空间采样点数.。差分驱动机器人y方向永远只有1个值（0.0）[m
+   # The number of samples to use when exploring the y velocity space[m
+[31m-  vy_samples: 0[m
+[32m+[m[32m  vy_samples: 1 #0[m[41m[m
+   # 旋转方向的速度空间采样点数[m
+   # The number of samples to use when exploring the theta velocity space[m
+   vtheta_samples: 10[m
