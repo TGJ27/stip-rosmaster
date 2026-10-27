@@ -8,10 +8,10 @@ DWAPlannerROS:
   min_vel_x: 0.01
   # y方向最大线速度绝对值，单位:米/秒。差速机器人为0 0.6
   # The maximum y velocity for the robot in m/s
-  max_vel_y: 0.2 #0.3
+  max_vel_y: 0.0 #0.3
   # y方向最小线速度绝对值，单位:米/秒。差速驱动机器人为0 0.6
   # The minimum y velocity for the robot in m/s
-  min_vel_y: -0.2 #0.3
+  min_vel_y: -0.0 #0.3
   # 机器人最大旋转速度的绝对值，单位为 rad/s 2.0
   # The absolute value of the maximum rotational velocity for the robot in rad/s
   max_rot_vel: 3.2 
@@ -41,7 +41,7 @@ DWAPlannerROS:
   acc_lim_x: 5.0 #10.0
   # 机器人在y方向的极限加速度，差速机器人来说是0 10
   # The y acceleration limit of the robot in meters/sec^2
-  acc_lim_y: 5.0 #10.0
+  acc_lim_y: 0.0 #10.0
   # 机器人的极限旋转加速度，单位为 rad/sec^2
   # The rotational acceleration limit of the robot in radians/sec^2
   acc_lim_theta: 20.0
@@ -65,7 +65,7 @@ DWAPlannerROS:
   vx_samples: 10
   # y方向速度空间采样点数.。差分驱动机器人y方向永远只有1个值（0.0）
   # The number of samples to use when exploring the y velocity space
-  vy_samples: 0
+  vy_samples: 1 #0
   # 旋转方向的速度空间采样点数
   # The number of samples to use when exploring the theta velocity space
   vtheta_samples: 10

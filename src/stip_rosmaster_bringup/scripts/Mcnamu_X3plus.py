@@ -676,7 +676,8 @@ class yahboomcar_driver:
         # 下发线速度和角速度
         # Issue linear vel and angular vel
         vx = msg.linear.x
-        vy = msg.linear.y
+        vy = 0.0
+        #vy = msg.linear.y
         angular = msg.angular.z
         # 小车运动控制,vel: ±1, angular: ±5
         # Trolley motion control,vel=[-1, 1], angular=[-5, 5]
