@@ -1,0 +1,44 @@
+<launch>
+  <!-- Node-local recovery: does not restart QR, fire, arm or ROS core. -->
+  <arg name="camera_respawn" default="false"/>
+  <arg name="respawn_delay" default="5.0"/>
+  <arg name="device"
+       default="/dev/v4l/by-id/usb-SunplusIT_Inc_Vision_Mini_TP_Vision_Mini_TP-video-index0"/>
+
+  <!-- Camera stays in its native MJPEG mode. -->
+  <arg name="width" default="1920"/>
+  <arg name="height" default="1080"/>
+  <arg name="fps" default="30"/>
+  <arg name="frame_id" default="inspection_camera_link"/>
+
+  <!-- Camera quality controls -->
+  <arg name="apply_controls" default="true"/>
+  <arg name="sharpness" default="3"/>
+  <arg name="exposure_auto_priority" default="0"/>
+  <arg name="power_line_frequency" default="1"/>
+
+  <!-- Keep autofocus for now. Tune fixed focus later. -->
+  <arg name="focus_auto" default="true"/>
+  <arg name="focus_absolute" default="10"/>
+
+  <node pkg="stip_inspection_camera"
+        type="inspection_camera_node.py"
+        name="stip_inspection_camera"
+        output="screen"
+        respawn="$(arg camera_respawn)"
+        respawn_delay="$(arg respawn_delay)">
+
+    <param name="device" value="$(arg device)"/>
+    <param name="width" value="$(arg width)"/>
+    <param name="height" value="$(arg height)"/>
+    <param name="fps" value="$(arg fps)"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+
+    <param name="apply_controls" value="$(arg apply_controls)"/>
+    <param name="sharpness" value="$(arg sharpness)"/>
+    <param name="exposure_auto_priority" value="$(arg exposure_auto_priority)"/>
+    <param name="power_line_frequency" value="$(arg power_line_frequency)"/>
+    <param name="focus_auto" value="$(arg focus_auto)"/>
+    <param name="focus_absolute" value="$(arg focus_absolute)"/>
+  </node>
+</launch>

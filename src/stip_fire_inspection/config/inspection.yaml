@@ -1,0 +1,58 @@
+# STIP: aim + thermal fusion + optional POP32i alarm. No dashboard/no navigation control.
+# Defaults are passive and use NO hardware actuators until explicitly enabled.
+fire_topic: /fire_detection/detections
+thermal_topic: /thermal/image_raw
+thermal_health_topic: /thermal/healthy
+alignment_file: ''   # injected by launch, reuse saved (flipped) H_thermal_to_rgb
+
+# AI candidate and sample freshness; smoke alone = UNVERIFIED_SMOKE
+min_ai_confidence: 0.40
+min_unique_ai_frames: 2
+max_ai_age_sec: 0.80
+candidate_hold_sec: 1.5
+max_thermal_age_sec: 0.60
+verify_timeout_sec: 8.0
+required_hot_frames: 3
+min_hot_c: 65.0            # EXPERIMENTAL, tune only using controlled safe tests
+min_above_background_c: 15.0
+min_roi_pixels: 3
+min_hot_pixels: 2         # at least 2 native thermal pixels above min_hot_c
+thermal_top_percentile: 90.0
+max_pair_age_sec: 0.35
+
+# Existing Yahboom camera arm; servo signs match STIP QR tracking.
+# WARNING: verify physical limits on your installed bracket before using.
+auto_aim: false
+stationary_test_mode: false
+require_motion_pause: true
+arm_exclusive: true
+pan_servo_id: 1
+tilt_servo_id: 2
+pan_min: 0.0
+pan_max: 180.0
+tilt_min: 0.0
+tilt_max: 90.0
+pan_sign: 1.0
+tilt_sign: -1.0
+pan_gain_deg: 4.0
+tilt_gain_deg: 3.2
+max_servo_step_deg: 3.00
+center_deadband_fraction: 0.10
+servo_run_time_ms: 160
+min_servo_interval_sec: 0.20
+servo_settle_sec: 0.22
+max_aim_sec: 8.0
+
+# Alarm emits /fire_inspection/alarm_requested always. Hardware output OFF initially.
+# The POP32i buzzer shares /gas_sensor/alarm_cmd with MQ6: operate a SINGLE
+# alarm owner only; hardware auto-off is disabled to avoid silencing others.
+enable_pop32i_buzzer: false
+buzzer_command_topic: /gas_sensor/alarm_cmd
+buzzer_confirmed_only: true
+# Will NOT send ALARM,OFF; operator must manage hardware reset separately.
+target_filter_alpha: 0.55
+alarm_clear_sec: 4.0
+alarm_clear_unique_ai_frames: 8
+alarm_clear_cool_frames: 3
+alarm_clear_below_c: 60.0
+buzzer_refresh_sec: 1.0

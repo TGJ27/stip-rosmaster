@@ -1,0 +1,9 @@
+# IMPORTANT: Set your POP32i *COM* port (NOT the Rosmaster motor controller port).
+# Prefer /dev/serial/by-id/usb-... for stable identification.
+port: /dev/ttyACM0
+baud: 115200
+sample_timeout_sec: 5.0
+calibration_samples: 60
+calibration_max_spread_adc: 30
+# A baseline gives relative ADC deviation ONLY, not ppm or %LEL.
+baseline_file: ~/.ros/stip_mq6_baseline.json

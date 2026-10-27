@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>stip_qr_inspection</name>
+  <version>2.1.0</version>
+  <description>QR-anchored indicator inspection, tracking and local inspection UI.</description>
+  <maintainer email="jetson@example.com">STIP</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>message_generation</build_depend>
+
+  <depend>rospy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>stip_rosmaster_msgs</depend>
+
+  <exec_depend>message_runtime</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-pyzbar</exec_depend>
+  <exec_depend>stip_rosmaster_bringup</exec_depend>
+  <exec_depend>stip_inspection_camera</exec_depend>
+  <exec_depend>python3-rospkg</exec_depend>
+  <exec_depend>python3-gi</exec_depend>
+  <exec_depend>gir1.2-gstreamer-1.0</exec_depend>
+  <export/>
+</package>

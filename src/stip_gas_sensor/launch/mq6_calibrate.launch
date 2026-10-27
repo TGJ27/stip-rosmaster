@@ -1,0 +1,12 @@
+<launch>
+  <!-- MQ-6 + POP32i calibration ONLY; no RGB or MLX90640 nodes. -->
+  <arg name="start_gas" default="true"/>
+  <arg name="port" default="/dev/ttyACM0"/>
+  <arg name="baud" default="115200"/>
+  <include if="$(arg start_gas)" file="$(find stip_gas_sensor)/launch/gas_sensor.launch">
+    <arg name="port" value="$(arg port)"/>
+    <arg name="baud" value="$(arg baud)"/>
+  </include>
+  <node pkg="stip_gas_sensor" type="mq6_baseline_gui.py"
+        name="stip_mq6_baseline_gui" output="screen" respawn="false"/>
+</launch>

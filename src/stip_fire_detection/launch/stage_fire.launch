@@ -1,0 +1,23 @@
+<launch>
+  <arg name="camera_topic" default="/inspection_camera/image_raw/compressed"/>
+  <arg name="fire_config" default="$(find stip_fire_detection)/config/fire_cpp.yaml"/>
+  <arg name="engine_path" default="$(find stip_fire_detection)/models/fire_smoke_yolov8s.engine"/>
+  <arg name="fire_decoder_backend" default="nvidia"/>
+  <arg name="fire_initially_enabled" default="false"/>
+  <arg name="fire_respawn" default="false"/>
+  <arg name="respawn_delay" default="5.0"/>
+  <!-- Deliberately no separate fire_viewer: overlays appear in inspection_ui. -->
+  <node pkg="stip_fire_detection"
+        type="fire_detector_cpp"
+        name="stip_fire_detector_cpp"
+        output="screen"
+        respawn="$(arg fire_respawn)"
+        respawn_delay="$(arg respawn_delay)">
+    <rosparam command="load" file="$(arg fire_config)"/>
+    <param name="camera_topic" value="$(arg camera_topic)"/>
+    <param name="engine_path" value="$(arg engine_path)"/>
+    <param name="decoder_backend" value="$(arg fire_decoder_backend)"/>
+    <!-- Overrides fire_cpp.yaml for this combined workflow. -->
+    <param name="enabled" value="$(arg fire_initially_enabled)"/>
+  </node>
+</launch>

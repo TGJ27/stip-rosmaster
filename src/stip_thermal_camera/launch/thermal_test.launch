@@ -1,0 +1,16 @@
+<launch>
+  <!-- Test mode with local OpenCV preview: don't run over a manager-owned sensor. -->
+  <arg name="i2c_bus" default="1"/>
+  <arg name="refresh_hz" default="16"/>
+  <arg name="viewer_fps" default="30"/>
+  <arg name="viewer_blur_sigma" default="2"/>
+  <arg name="viewer_auto_range" default="true"/>
+  <include file="$(find stip_thermal_camera)/launch/thermal_camera.launch">
+    <arg name="i2c_bus" value="$(arg i2c_bus)"/>
+    <arg name="viewer" value="true"/>
+    <arg name="refresh_hz" value="$(arg refresh_hz)"/>
+    <arg name="viewer_fps" value="$(arg viewer_fps)"/>
+    <arg name="viewer_blur_sigma" value="$(arg viewer_blur_sigma)"/>
+    <arg name="viewer_auto_range" value="$(arg viewer_auto_range)"/>
+  </include>
+</launch>

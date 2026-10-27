@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>stip_rosmaster_nav</name>
+  <version>0.2.0</version>
+  <description>LiDAR, GMapping, AMCL and move_base configuration for STIP ROSMaster X3 Plus.</description>
+  <maintainer email="noreply@example.com">STIP</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <exec_depend>stip_rosmaster_bringup</exec_depend>
+  <exec_depend>tf</exec_depend>
+  <exec_depend>gmapping</exec_depend>
+  <exec_depend>map_server</exec_depend>
+  <exec_depend>amcl</exec_depend>
+  <exec_depend>move_base</exec_depend>
+  <exec_depend>dwa_local_planner</exec_depend>
+  <exec_depend>clear_costmap_recovery</exec_depend>
+  <exec_depend>rotate_recovery</exec_depend>
+  <exec_depend>ydlidar_ros_driver</exec_depend>
+  <exec_depend>rviz</exec_depend>
+  <export/>
+</package>

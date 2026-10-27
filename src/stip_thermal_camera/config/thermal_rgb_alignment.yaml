@@ -1,0 +1,37 @@
+version: 2
+kind: mlx90640_to_rgb_manual_registration
+created_utc: '2023-03-27T18:05:49.069474+00:00'
+thermal_width: 32
+thermal_height: 24
+rgb_width: 960
+rgb_height: 540
+H_thermal_to_rgb:
+- - -14.268000469207761
+  - 0.0
+  - 696.1540197849273
+- - -2.5877790993732102e-17
+  - 14.849999999999998
+  - 19.225000000000023
+- - -2.193033135062038e-18
+  - 0.0
+  - 1.0
+H_base_thermal_to_rgb:
+- - 17.40000057220459
+  - 0.0
+  - 210.30000638961792
+- - 1.4802973661668756e-16
+  - 16.875
+  - 75.9375
+- - 2.193033135062038e-18
+  - 0.0
+  - 1.0
+flip_horizontal: true
+manual_adjustments:
+  dx: -5.0
+  dy: -80.0
+  sx: 0.8199999999999998
+  sy: 0.8799999999999999
+  angle: 0.0
+  alpha: 0.5
+  flip_lr: true
+note: Valid near the alignment target depth. Not a 3D parallax correction.

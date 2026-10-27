@@ -1,0 +1,60 @@
+<launch>
+    <!-- STIP ROSMaster X3 Plus base bringup: base driver + odometry + IMU + EKF. -->
+    <arg name="robot_type" default="X3plus"/>
+    <!-- Conservative defaults retain the previous standalone behavior. -->
+    <arg name="driver_required" default="true"/>
+    <arg name="driver_respawn" default="false"/>
+    <arg name="aux_respawn" default="false"/>
+    <arg name="respawn_delay" default="5.0"/>
+    <!-- Purple LED is system READY, never just bringup READY. Standalone
+         bringup has no manager heartbeat, so purple remains off. -->
+    <arg name="status_led_require_all_modules_ready" default="true"/>
+
+    <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find stip_rosmaster_description)/urdf/stip_rosmaster_X3plus.urdf'"/>
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" respawn="$(arg aux_respawn)" respawn_delay="$(arg respawn_delay)"/>
+
+    <node pkg="stip_rosmaster_bringup" type="Mcnamu_X3plus.py" name="driver_node" required="$(arg driver_required)" respawn="$(arg driver_respawn)" respawn_delay="$(arg respawn_delay)" output="screen">
+        <param name="xlinear_speed_limit" type="double" value="0.7"/>
+        <param name="ylinear_speed_limit" type="double" value="0.7"/>
+        <param name="angular_speed_limit" type="double" value="3.2"/>
+        <param name="imu_link" type="string" value="imu_link"/>
+        <param name="status_led_require_all_modules_ready" type="bool"
+               value="$(arg status_led_require_all_modules_ready)"/>
+        <remap from="/pub_vel" to="/vel_raw"/>
+        <remap from="/pub_imu" to="/imu/data_raw"/>
+        <remap from="/pub_mag" to="/mag/mag_raw"/>
+    </node>
+
+    <node pkg="stip_rosmaster_bringup" type="base_node" name="odometry_publisher" respawn="$(arg aux_respawn)" respawn_delay="$(arg respawn_delay)">
+        <param name="odom_frame" type="string" value="odom"/>
+        <param name="base_footprint_frame" type="string" value="base_footprint"/>
+        <param name="linear_scale_x" type="double" value="1.1"/>
+        <param name="linear_scale_y" type="double" value="0.95"/>
+        <remap from="/sub_vel" to="/vel_raw"/>
+        <remap from="/pub_odom" to="/odom_raw"/>
+    </node>
+
+    <node pkg="imu_filter_madgwick" type="imu_filter_node" name="imu_filter_madgwick" output="screen" respawn="$(arg aux_respawn)" respawn_delay="$(arg respawn_delay)">
+        <param name="fixed_frame" value="base_link"/>
+        <param name="use_mag" value="false"/>
+        <param name="publish_tf" value="false"/>
+        <param name="use_magnetic_field_msg" value="false"/>
+        <param name="world_frame" value="enu"/>
+        <param name="orientation_stddev" value="0.05"/>
+        <param name="angular_scale" value="1.03"/>
+        <remap from="/sub_imu" to="/imu/data_raw"/>
+        <remap from="/sub_mag" to="/mag/mag_raw"/>
+        <remap from="/pub_imu" to="/imu/imu_data"/>
+        <remap from="/pub_mag" to="/mag/mag_field"/>
+    </node>
+
+    <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization" output="screen" respawn="$(arg aux_respawn)" respawn_delay="$(arg respawn_delay)">
+        <remap from="odometry/filtered" to="odom"/>
+        <remap from="/imu0" to="/imu/data"/>
+        <remap from="/odom0" to="odom_raw"/>
+        <param name="odom_frame" value="/odom"/>
+        <param name="world_frame" value="/odom"/>
+        <param name="base_link_frame" value="/base_footprint"/>
+        <rosparam command="load" file="$(find stip_rosmaster_bringup)/param/robot_localization.yaml"/>
+    </node>
+</launch>

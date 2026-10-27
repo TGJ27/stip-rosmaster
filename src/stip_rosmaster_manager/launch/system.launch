@@ -1,0 +1,27 @@
+<launch>
+  <!-- Canonical ROSMASTER system entrypoint. The manager owns this launch;
+       QR, fire, camera and bringup packages remain independent components. -->
+  <arg name="ui_decoder_backend" default="nvidia"/>
+  <arg name="qr_decoder_backend" default="nvidia"/>
+  <arg name="fire_decoder_backend" default="nvidia"/>
+  <arg name="fire_initially_enabled" default="false"/>
+  <arg name="bringup_timeout" default="25.0"/>
+  <arg name="warmup_timeout" default="12.0"/>
+  <arg name="retry_delay" default="5.0"/>
+  <arg name="max_start_attempts" default="3"/>
+  <arg name="gas_serial_port" default="/dev/ttyACM0"/>
+  <arg name="thermal_i2c_bus" default="1"/>
+  <node pkg="stip_rosmaster_manager" type="stip_stage_manager.py"
+        name="stip_stage_manager" output="screen" required="true" respawn="false">
+    <param name="ui_decoder_backend" value="$(arg ui_decoder_backend)"/>
+    <param name="qr_decoder_backend" value="$(arg qr_decoder_backend)"/>
+    <param name="fire_decoder_backend" value="$(arg fire_decoder_backend)"/>
+    <param name="fire_initially_enabled" value="$(arg fire_initially_enabled)"/>
+    <param name="bringup_timeout" value="$(arg bringup_timeout)"/>
+    <param name="warmup_timeout" value="$(arg warmup_timeout)"/>
+    <param name="retry_delay" value="$(arg retry_delay)"/>
+    <param name="max_start_attempts" value="$(arg max_start_attempts)"/>
+    <param name="gas_serial_port" value="$(arg gas_serial_port)"/>
+    <param name="thermal_i2c_bus" value="$(arg thermal_i2c_bus)"/>
+  </node>
+</launch>

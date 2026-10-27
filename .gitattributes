@@ -1,0 +1,11 @@
+# Keep binary robotics assets as binary in Git (not text-diffed).
+*.STL binary
+*.stl binary
+*.engine binary
+*.pgm binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.bag binary
+*.mcap binary
+*.db3 binary

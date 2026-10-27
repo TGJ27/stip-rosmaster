@@ -1,0 +1,41 @@
+<launch>
+  <!-- One launch for the TWO CAMERAS and manual thermal-to-RGB alignment ONLY. -->
+  <!-- There is deliberately NO MQ-6 node or gas calibration in this launch. -->
+  <arg name="start_rgb" default="true"/>
+  <arg name="start_thermal" default="true"/>
+  <arg name="rgb_device" default="/dev/v4l/by-id/usb-SunplusIT_Inc_Vision_Mini_TP_Vision_Mini_TP-video-index0"/>
+  <arg name="i2c_bus" default="1"/>
+  <arg name="refresh_hz" default="16"/>
+  <arg name="display_fps" default="30"/>
+  <arg name="blur_sigma" default="2"/>
+  <arg name="alpha" default="0.50"/>
+  <arg name="auto_range" default="true"/>
+  <arg name="use_saved_alpha" default="false"/>
+  <arg name="decode_scale" default="2"/>
+  <arg name="min_c" default="30.0"/>
+  <arg name="max_c" default="45.0"/>
+  <arg name="alignment_file" default="$(find stip_thermal_camera)/config/thermal_rgb_alignment.yaml"/>
+  <arg name="temperature_file" default=""/>
+  <include if="$(arg start_rgb)" file="$(find stip_inspection_camera)/launch/camera.launch">
+    <arg name="device" value="$(arg rgb_device)"/>
+  </include>
+  <include if="$(arg start_thermal)" file="$(find stip_thermal_camera)/launch/thermal_camera.launch">
+    <arg name="i2c_bus" value="$(arg i2c_bus)"/>
+    <arg name="refresh_hz" value="$(arg refresh_hz)"/>
+    <arg name="viewer_auto_range" value="$(arg auto_range)"/>
+    <arg name="viewer" value="false"/>
+  </include>
+  <node pkg="stip_thermal_camera" type="thermal_manual_alignment.py"
+        name="stip_thermal_rgb_alignment_gui" output="screen" respawn="false">
+    <param name="display_fps" value="$(arg display_fps)"/>
+    <param name="blur_sigma" value="$(arg blur_sigma)"/>
+    <param name="alpha" value="$(arg alpha)"/>
+    <param name="use_saved_alpha" value="$(arg use_saved_alpha)"/>
+    <param name="auto_range" value="$(arg auto_range)"/>
+    <param name="decode_scale" value="$(arg decode_scale)"/>
+    <param name="min_c" value="$(arg min_c)"/>
+    <param name="max_c" value="$(arg max_c)"/>
+    <param name="alignment_file" value="$(arg alignment_file)"/>
+    <param name="temperature_file" value="$(arg temperature_file)"/>
+  </node>
+</launch>

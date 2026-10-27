@@ -1,0 +1,12 @@
+<launch>
+  <!-- Headless, web-managed entrypoint using the existing staged recovery. -->
+  <arg name="gas_serial_port" default="/dev/ttyACM0"/>
+  <arg name="thermal_i2c_bus" default="1"/>
+  <arg name="max_start_attempts" default="3"/>
+  <node pkg="stip_rosmaster_manager" type="stip_dashboard_stage_manager.py"
+        name="stip_stage_manager" output="screen" required="true" respawn="false">
+    <param name="gas_serial_port" value="$(arg gas_serial_port)"/>
+    <param name="thermal_i2c_bus" value="$(arg thermal_i2c_bus)"/>
+    <param name="max_start_attempts" value="$(arg max_start_attempts)"/>
+  </node>
+</launch>

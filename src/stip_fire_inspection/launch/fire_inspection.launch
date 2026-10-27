@@ -1,0 +1,14 @@
+<launch>
+  <!-- Reuse ALREADY-RUNNING RGB AI, MLX90640, camera-arm robot driver, gas bridge. -->
+  <arg name="alignment_file" default="$(find stip_thermal_camera)/config/thermal_rgb_alignment.yaml"/>
+  <arg name="auto_aim" default="false"/>
+  <arg name="stationary_test_mode" default="false"/>
+  <arg name="enable_pop32i_buzzer" default="false"/>
+  <node pkg="stip_fire_inspection" type="fire_inspection_node.py" name="stip_fire_inspection" output="screen" respawn="false">
+    <rosparam command="load" file="$(find stip_fire_inspection)/config/inspection.yaml"/>
+    <param name="alignment_file" value="$(arg alignment_file)"/>
+    <param name="auto_aim" value="$(arg auto_aim)"/>
+    <param name="stationary_test_mode" value="$(arg stationary_test_mode)"/>
+    <param name="enable_pop32i_buzzer" value="$(arg enable_pop32i_buzzer)"/>
+  </node>
+</launch>

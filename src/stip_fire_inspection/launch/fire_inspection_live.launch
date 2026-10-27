@@ -1,0 +1,68 @@
+<launch>
+  <!-- ONE command: existing arm/robot driver, RGB camera, TensorRT fire AI,
+       thermal sensor + new target aiming, fire verification and alarm logic.
+       THIS IS ONLY FOR ATTENDED TESTING WHILE ROBOT IS STATIONARY.
+       Does NOT cancel navigation or block motion commands. -->
+  <arg name="start_robot" default="true"/>
+  <arg name="start_camera" default="true"/>
+  <arg name="start_thermal" default="true"/>
+  <arg name="start_fire" default="true"/>
+  <arg name="show_fire_view" default="true"/>
+  <arg name="start_gas" default="true"/>
+  <arg name="enable_pop32i_buzzer" default="true"/>
+  <arg name="alignment_file" default="$(find stip_thermal_camera)/config/thermal_rgb_alignment.yaml"/>
+  <!-- Fire + thermal display settings; does not affect sensor confirmation. -->
+  <arg name="display_fps" default="30"/>
+  <arg name="overlay_alpha" default="0.50"/>
+  <arg name="overlay_blur_sigma" default="2"/>
+  <arg name="overlay_auto_range" default="true"/>
+
+  <!-- Reuse the existing Yahboom arm driver, no duplicate servo controller. -->
+  <include if="$(arg start_robot)"
+           file="$(find stip_rosmaster_bringup)/launch/bringup.launch"/>
+  <include if="$(arg start_camera)"
+           file="$(find stip_inspection_camera)/launch/camera.launch"/>
+  <include if="$(arg start_thermal)"
+           file="$(find stip_thermal_camera)/launch/thermal_camera.launch">
+    <arg name="i2c_bus" value="1"/>
+    <arg name="refresh_hz" value="16"/>
+    <arg name="viewer" value="false"/>
+  </include>
+  <include if="$(arg start_fire)"
+           file="$(find stip_fire_detection)/launch/stage_fire.launch">
+    <arg name="fire_initially_enabled" value="true"/>
+  </include>
+
+  <!-- Fire-specific viewer draws RGB boxes + registered thermal + native ROI Celsius.
+       Exactly one RGB acquisition process and one thermal acquisition process. -->
+  <node if="$(arg show_fire_view)" pkg="stip_fire_inspection"
+        type="fire_inspection_viewer.py"
+        name="stip_fire_inspection_viewer" output="screen">
+    <param name="camera_topic" value="/inspection_camera/image_raw/compressed"/>
+    <param name="detection_topic" value="/fire_detection/detections"/>
+    <param name="thermal_topic" value="/thermal/image_raw"/>
+    <param name="alignment_file" value="$(arg alignment_file)"/>
+    <param name="alpha" value="$(arg overlay_alpha)"/>
+    <param name="blur_sigma" value="$(arg overlay_blur_sigma)"/>
+    <param name="auto_range" value="$(arg overlay_auto_range)"/>
+    <param name="display_fps" value="$(arg display_fps)"/>
+    <param name="max_detection_age_sec" value="0.75"/>
+    <param name="max_thermal_age_sec" value="0.60"/>
+    <param name="max_pair_age_sec" value="0.35"/>
+    <param name="preview_decode_scale" value="2"/>
+    <param name="opencv_threads" value="1"/>
+  </node>
+
+  <!-- MQ-6 bridge is solely used as existing POP32i serial alarm transport.
+       Disabled by default to avoid claiming shared serial device or buzzer. -->
+  <include if="$(arg start_gas)"
+           file="$(find stip_gas_sensor)/launch/gas_sensor.launch"/>
+
+  <!-- Live test mode: arm tracking on, stationary robot acknowledged. -->
+  <include file="$(find stip_fire_inspection)/launch/fire_inspection.launch">
+    <arg name="alignment_file" value="$(arg alignment_file)"/>
+    <arg name="auto_aim" value="true"/>
+    <arg name="stationary_test_mode" value="true"/>
+    <arg name="enable_pop32i_buzzer" value="$(arg enable_pop32i_buzzer)"/>
+  </include>
+</launch>

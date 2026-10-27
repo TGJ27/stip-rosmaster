@@ -1,0 +1,12 @@
+<launch>
+  <!-- Complete real-robot navigation: base + LiDAR + map + AMCL + move_base. -->
+  <arg name="use_rviz" default="true"/>
+  <arg name="map" default="my_map"/>
+
+  <include file="$(find stip_rosmaster_bringup)/launch/bringup.launch"/>
+  <include file="$(find stip_rosmaster_nav)/launch/lidar.launch"/>
+  <include file="$(find stip_rosmaster_nav)/launch/navigation.launch">
+    <arg name="use_rviz" value="$(arg use_rviz)"/>
+    <arg name="map" value="$(arg map)"/>
+  </include>
+</launch>

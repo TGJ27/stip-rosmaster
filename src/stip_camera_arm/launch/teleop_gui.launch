@@ -1,0 +1,27 @@
+<launch>
+  <!-- GUI pan/tilt tester. Starts real bringup unless start_robot:=false. -->
+  <arg name="start_robot" default="true"/>
+  <include if="$(arg start_robot)" file="$(find stip_rosmaster_bringup)/launch/bringup.launch"/>
+  <arg name="pan_servo_id" default="1"/>
+  <arg name="tilt_servo_id" default="2"/>
+  <arg name="pan_home" default="90"/>
+  <arg name="tilt_home" default="0"/>
+  <arg name="pan_min" default="0"/>
+  <arg name="pan_max" default="180"/>
+  <arg name="tilt_min" default="0"/>
+  <arg name="tilt_max" default="90"/>
+  <arg name="step" default="2"/>
+  <arg name="run_time" default="200"/>
+  <node pkg="stip_camera_arm" type="camera_arm_gui.py" name="stip_camera_arm_gui" output="screen" required="true">
+    <param name="pan_servo_id" value="$(arg pan_servo_id)"/>
+    <param name="tilt_servo_id" value="$(arg tilt_servo_id)"/>
+    <param name="pan_home" value="$(arg pan_home)"/>
+    <param name="tilt_home" value="$(arg tilt_home)"/>
+    <param name="pan_min" value="$(arg pan_min)"/>
+    <param name="pan_max" value="$(arg pan_max)"/>
+    <param name="tilt_min" value="$(arg tilt_min)"/>
+    <param name="tilt_max" value="$(arg tilt_max)"/>
+    <param name="step" value="$(arg step)"/>
+    <param name="run_time" value="$(arg run_time)"/>
+  </node>
+</launch>

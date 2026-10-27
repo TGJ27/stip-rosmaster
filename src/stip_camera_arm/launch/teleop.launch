@@ -1,0 +1,51 @@
+<launch>
+  <!--
+    Standalone camera-arm hardware test.
+    By default this starts the ROSMaster bringup because the physical servo
+    command /TargetAngle is handled by the robot driver.
+
+    If bringup is already running:
+      roslaunch stip_camera_arm teleop.launch start_robot:=false
+  -->
+  <arg name="start_robot" default="true"/>
+
+  <include if="$(arg start_robot)"
+           file="$(find stip_rosmaster_bringup)/launch/bringup.launch"/>
+
+  <!-- Yahboom UART/bus servo IDs -->
+  <arg name="pan_servo_id" default="1"/>
+  <arg name="tilt_servo_id" default="2"/>
+
+  <!-- Current home positions -->
+  <arg name="pan_home" default="90"/>
+  <arg name="tilt_home" default="0"/>
+
+  <!-- Temporary software limits. -->
+  <arg name="pan_min" default="0"/>
+  <arg name="pan_max" default="180"/>
+  <arg name="tilt_min" default="0"/>
+  <arg name="tilt_max" default="90"/>
+
+  <arg name="step" default="1"/>
+  <arg name="run_time" default="200"/>
+
+  <node pkg="stip_camera_arm"
+        type="camera_arm_teleop.py"
+        name="stip_camera_arm_teleop"
+        output="screen">
+
+    <param name="pan_servo_id" value="$(arg pan_servo_id)"/>
+    <param name="tilt_servo_id" value="$(arg tilt_servo_id)"/>
+
+    <param name="pan_home" value="$(arg pan_home)"/>
+    <param name="tilt_home" value="$(arg tilt_home)"/>
+
+    <param name="pan_min" value="$(arg pan_min)"/>
+    <param name="pan_max" value="$(arg pan_max)"/>
+    <param name="tilt_min" value="$(arg tilt_min)"/>
+    <param name="tilt_max" value="$(arg tilt_max)"/>
+
+    <param name="step" value="$(arg step)"/>
+    <param name="run_time" value="$(arg run_time)"/>
+  </node>
+</launch>

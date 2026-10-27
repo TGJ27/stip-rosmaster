@@ -1,0 +1,13 @@
+<launch>
+  <!-- Adapted from Yahboom angular calibration; exclusive workflow, STIP driver only. -->
+  <arg name="use_rqt" default="true"/>
+  <arg name="max_duration" default="18.0"/>
+  <include file="$(find stip_rosmaster_bringup)/launch/bringup.launch"/>
+  <node name="calibrate_angular" pkg="stip_rosmaster_manager"
+        type="calibrate_angular.py" output="screen" required="true">
+    <param name="start_test" value="false"/>
+    <param name="max_test_duration" value="$(arg max_duration)"/>
+  </node>
+  <node if="$(arg use_rqt)" name="stip_angular_rqt_reconfigure"
+        pkg="rqt_reconfigure" type="rqt_reconfigure" output="screen"/>
+</launch>

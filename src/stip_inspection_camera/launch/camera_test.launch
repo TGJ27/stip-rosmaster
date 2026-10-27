@@ -1,0 +1,18 @@
+<launch>
+  <!-- Human-facing camera test: camera publisher + scaled local view. -->
+  <arg name="camera_topic" default="/inspection_camera/image_raw/compressed"/>
+  <arg name="display_fps" default="30"/>
+  <arg name="preview_decode_scale" default="2"/>
+
+  <include file="$(find stip_inspection_camera)/launch/camera.launch"/>
+
+  <node pkg="stip_inspection_camera"
+        type="camera_view.py"
+        name="stip_inspection_camera_view"
+        output="screen">
+    <param name="camera_topic" value="$(arg camera_topic)"/>
+    <param name="display_fps" value="$(arg display_fps)"/>
+    <param name="preview_decode_scale" value="$(arg preview_decode_scale)"/>
+    <param name="opencv_threads" value="1"/>
+  </node>
+</launch>

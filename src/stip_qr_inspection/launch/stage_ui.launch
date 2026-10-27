@@ -1,0 +1,143 @@
+<launch>
+  <arg name="ui_respawn" default="false"/>
+  <arg name="respawn_delay" default="5.0"/>
+  <arg name="camera_topic"
+       default="/inspection_camera/image_raw/compressed"/>
+  <arg name="geometry_topic"
+       default="/inspection/geometry"/>
+
+  <arg name="data_dir"
+       default="$(env HOME)/Documents/stip_inspection_data"/>
+
+  <!-- QR behavior -->
+  <!-- Final 5 s timer starts only after the horizontal scan reaches pan limit. -->
+  <arg name="qr_search_timeout" default="5"/>
+
+  <!-- Pan-only QR acquisition scan. Tilt is not changed. -->
+  <arg name="pan_search_enabled" default="true"/>
+  <arg name="pan_search_step_deg" default="3"/>
+  <arg name="pan_search_interval" default="0.18"/>
+  <arg name="pan_search_probe_timeout" default="0.20"/>
+
+  <!-- Smooth tracking -->
+  <arg name="tracking_detection_hz" default="15"/>
+  <arg name="tracking_control_hz" default="10"/>
+  <arg name="tracking_servo_run_time" default="100"/>
+  <arg name="alignment_timeout" default="20"/>
+
+  <arg name="tolerance_px" default="20"/>
+  <arg name="margin_px" default="30"/>
+  <!-- Normal tracking success: target center may be this far from image center. -->
+  <arg name="center_range_px" default="200"/>
+
+  <!-- Servo-limit fallback only: QR + indicator must remain this far inside image edges. -->
+  <arg name="edge_margin_px" default="20"/>
+
+  <arg name="track_far_px" default="300"/>
+  <arg name="track_mid_px" default="120"/>
+  <arg name="track_far_step" default="3"/>
+  <arg name="track_mid_step" default="2"/>
+  <arg name="track_near_step" default="1"/>
+
+  <!-- Local debug UI.
+       2 = decode JPEG directly at half res: 1920x1080 -> 960x540.
+       Set 1 if you want full-res local display and accept higher CPU. -->
+  <arg name="display_fps" default="30"/>
+  <arg name="fire_overlay_max_age" default="0.15"/>
+  <arg name="geometry_anchor_max_age" default="1.00"/>
+  <arg name="tracked_box_max_age" default="0.50"/>
+
+  <!-- Robust smooth overlay tracking. All values below are on the local preview. -->
+  <arg name="tracker_max_features" default="40"/>
+  <arg name="tracker_min_features" default="8"/>
+  <arg name="tracker_quality_level" default="0.01"/>
+  <arg name="tracker_min_distance" default="5"/>
+  <arg name="tracker_feature_padding_px" default="24"/>
+  <arg name="tracker_ransac_threshold_px" default="3"/>
+  <arg name="tracker_max_point_jump_px" default="80"/>
+  <arg name="tracker_max_corner_jump_px" default="95"/>
+  <arg name="tracker_area_ratio_min" default="0.55"/>
+  <arg name="tracker_area_ratio_max" default="1.80"/>
+  <arg name="tracker_smoothing_alpha" default="0.9"/>
+  <arg name="tracker_hold_seconds" default="0.22"/>
+  <arg name="history_match_tolerance" default="0.15"/>
+
+  <arg name="preview_decode_scale" default="2"/>
+  <!-- NVIDIA hardware JPEG decode. Set opencv to restore the old path. -->
+  <arg name="ui_decoder_backend" default="nvidia"/>
+  <arg name="qr_decoder_backend" default="nvidia"/>
+
+  <!-- Enrollment selection window -->
+  <arg name="roi_preview_max_width" default="960"/>
+  <arg name="roi_preview_max_height" default="540"/>
+
+  <!-- Limit OpenCV internal worker pools -->
+  <arg name="backend_opencv_threads" default="2"/>
+  <arg name="ui_opencv_threads" default="1"/>
+
+  <!-- Camera arm -->
+  <arg name="pan_servo_id" default="1"/>
+  <arg name="tilt_servo_id" default="2"/>
+
+  <arg name="pan_home" default="90"/>
+  <arg name="tilt_home" default="0"/>
+
+  <arg name="pan_min" default="0"/>
+  <arg name="pan_max" default="180"/>
+  <arg name="tilt_min" default="0"/>
+  <arg name="tilt_max" default="90"/>
+
+  <arg name="step" default="1"/>
+  <arg name="servo_run_time" default="150"/>
+
+
+  <!-- Simple local test UI -->
+  <node pkg="stip_qr_inspection"
+        type="inspection_ui.py"
+        name="stip_inspection_ui"
+        output="screen"
+        respawn="$(arg ui_respawn)"
+        respawn_delay="$(arg respawn_delay)">
+
+    <param name="camera_topic" value="$(arg camera_topic)"/>
+    <param name="startup_guard_enabled" value="true"/>
+    <param name="geometry_topic" value="$(arg geometry_topic)"/>
+
+    <param name="display_fps" value="$(arg display_fps)"/>
+    <param name="decoder_backend" value="$(arg ui_decoder_backend)"/>
+    <param name="fire_overlay_max_age" value="$(arg fire_overlay_max_age)"/>
+    <param name="geometry_anchor_max_age" value="$(arg geometry_anchor_max_age)"/>
+    <param name="tracked_box_max_age" value="$(arg tracked_box_max_age)"/>
+
+    <param name="tracker_max_features" value="$(arg tracker_max_features)"/>
+    <param name="tracker_min_features" value="$(arg tracker_min_features)"/>
+    <param name="tracker_quality_level" value="$(arg tracker_quality_level)"/>
+    <param name="tracker_min_distance" value="$(arg tracker_min_distance)"/>
+    <param name="tracker_feature_padding_px" value="$(arg tracker_feature_padding_px)"/>
+    <param name="tracker_ransac_threshold_px" value="$(arg tracker_ransac_threshold_px)"/>
+    <param name="tracker_max_point_jump_px" value="$(arg tracker_max_point_jump_px)"/>
+    <param name="tracker_max_corner_jump_px" value="$(arg tracker_max_corner_jump_px)"/>
+    <param name="tracker_area_ratio_min" value="$(arg tracker_area_ratio_min)"/>
+    <param name="tracker_area_ratio_max" value="$(arg tracker_area_ratio_max)"/>
+    <param name="tracker_smoothing_alpha" value="$(arg tracker_smoothing_alpha)"/>
+    <param name="tracker_hold_seconds" value="$(arg tracker_hold_seconds)"/>
+    <param name="history_match_tolerance" value="$(arg history_match_tolerance)"/>
+
+    <param name="preview_decode_scale" value="$(arg preview_decode_scale)"/>
+    <param name="ui_opencv_threads" value="$(arg ui_opencv_threads)"/>
+
+    <param name="pan_servo_id" value="$(arg pan_servo_id)"/>
+    <param name="tilt_servo_id" value="$(arg tilt_servo_id)"/>
+
+    <param name="pan_home" value="$(arg pan_home)"/>
+    <param name="tilt_home" value="$(arg tilt_home)"/>
+
+    <param name="pan_min" value="$(arg pan_min)"/>
+    <param name="pan_max" value="$(arg pan_max)"/>
+    <param name="tilt_min" value="$(arg tilt_min)"/>
+    <param name="tilt_max" value="$(arg tilt_max)"/>
+
+    <param name="step" value="$(arg step)"/>
+    <param name="servo_run_time" value="$(arg servo_run_time)"/>
+  </node>
+</launch>

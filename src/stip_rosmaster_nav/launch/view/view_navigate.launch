@@ -1,0 +1,4 @@
+<launch>
+    <node pkg="rviz" type="rviz" name="rviz" required="true"
+          args="-d $(find stip_rosmaster_nav)/rviz/stip_rosmaster_navigate.rviz"/>
+</launch>

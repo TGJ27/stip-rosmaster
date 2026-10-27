@@ -1,0 +1,5 @@
+<launch>
+  <!-- Compact desktop workflow launcher. Must be run in the Jetson graphical session. -->
+  <node pkg="stip_rosmaster_manager" type="stip_launcher_gui.py"
+        name="stip_workflow_launcher_gui" output="screen" respawn="false"/>
+</launch>

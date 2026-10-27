@@ -1,0 +1,14 @@
+i2c_bus: 1
+address: 51           # 0x33 decimal
+refresh_hz: 16  # confirmed stable: 16 Hz subpage / ~8 complete fps
+output_width: 320
+output_height: 240
+preview_blur_sigma: 2.0 # visual-only Gaussian smoothing on color image
+# Fixed color scale makes visual comparisons meaningful; set false for auto-range.
+auto_range: true  # automatic thermal contrast for colored preview
+min_c: 15.0
+max_c: 45.0
+# temperature corrections are NOT performed by interpolation
+max_errors: 8
+frame_timeout_sec: 12.0
+frame_id: mlx90640_optical

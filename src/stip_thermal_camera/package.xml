@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>stip_thermal_camera</name>
+  <version>1.6.0</version>
+  <description>Jetson I2C MLX90640 thermal 32x24 raw temperatures and cubic interpolated false-color ROS image.</description>
+  <maintainer email="jetson@example.com">STIP</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>rospy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <export/>
+</package>

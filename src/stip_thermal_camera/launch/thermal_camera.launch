@@ -1,0 +1,21 @@
+<launch>
+  <!-- Standalone acquisition-only launch, no camera/robot/fire/QR dependencies. -->
+  <arg name="i2c_bus" default="1"/>
+  <arg name="refresh_hz" default="16"/>
+  <arg name="viewer" default="false"/>
+  <arg name="viewer_fps" default="30"/>
+  <arg name="viewer_blur_sigma" default="2"/>
+  <arg name="viewer_auto_range" default="true"/>
+  <node pkg="stip_thermal_camera" type="thermal_node.py" name="stip_thermal_camera" output="screen" respawn="false" required="false">
+    <rosparam command="load" file="$(find stip_thermal_camera)/config/thermal.yaml"/>
+    <param name="i2c_bus" value="$(arg i2c_bus)"/>
+    <param name="refresh_hz" value="$(arg refresh_hz)"/>
+    <param name="auto_range" value="$(arg viewer_auto_range)"/>
+  </node>
+  <node if="$(arg viewer)" pkg="stip_thermal_camera" type="thermal_viewer.py"
+        name="stip_thermal_viewer" output="screen" respawn="false" required="false">
+    <param name="display_fps" value="$(arg viewer_fps)"/>
+    <param name="blur_sigma" value="$(arg viewer_blur_sigma)"/>
+    <param name="auto_range" value="$(arg viewer_auto_range)"/>
+  </node>
+</launch>

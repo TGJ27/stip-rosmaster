@@ -1,0 +1,58 @@
+# catkin workspace build and generated outputs
+/build/
+/devel/
+/install/
+/logs/
+/log/
+.catkin_tools/
+
+# Python caches/environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# IDE and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Local backups and transient files
+**/dashboard_patch_backup_*/
+**/dashboard_update_backups/
+**/dashboard_update_backups/**
+**/dashboard_backup_*/
+**/dashboard_update_backup_*/
+*.dashboard.bak
+*.yaml.backup_*
+*.log
+*.tmp
+*.temp
+
+# Secrets and private certificates (not an exhaustive secret detector)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+id_rsa*
+id_ed25519*
+
+# Raw ROS recordings and captured field evidence
+*.bag
+*.bag.active
+*.mcap
+*.db3
+recordings/
+inspection_runs/
+fire_events/
+
+# Generated archives
+*.zip
+*.tar.gz

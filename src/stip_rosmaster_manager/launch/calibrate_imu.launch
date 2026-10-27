@@ -1,0 +1,11 @@
+<launch>
+  <!-- Yahboom imu_calib do_calib, rewired to STIP raw IMU and single STIP bringup. -->
+  <!-- Keep robot still; calibration file is NOT automatically applied. -->
+  <arg name="output_file" default="$(env HOME)/.ros/stip_imu_calib.yaml"/>
+  <include file="$(find stip_rosmaster_bringup)/launch/bringup.launch"/>
+  <node pkg="imu_calib" type="do_calib" name="stip_imu_do_calib"
+        output="screen" required="true">
+    <remap from="/sub_imu" to="/imu/data_raw"/>
+    <param name="output_file" value="$(arg output_file)"/>
+  </node>
+</launch>

@@ -1,0 +1,11 @@
+string name
+---
+bool success
+string message
+string qr_value
+string original_path
+string annotated_path
+string indicator_crop_path
+string result_path
+float32 pan
+float32 tilt

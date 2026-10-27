@@ -1,0 +1,10 @@
+<launch>
+  <!-- Standalone sensor node: never starts unrelated bringup/camera/fire/QR. -->
+  <arg name="port" default="/dev/ttyACM0"/>
+  <arg name="baud" default="115200"/>
+  <node pkg="stip_gas_sensor" type="gas_bridge.py" name="stip_gas_sensor" output="screen" respawn="false" required="false">
+    <rosparam command="load" file="$(find stip_gas_sensor)/config/gas.yaml"/>
+    <param name="port" value="$(arg port)"/>
+    <param name="baud" value="$(arg baud)"/>
+  </node>
+</launch>

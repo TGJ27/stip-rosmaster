@@ -1,0 +1,27 @@
+# Native C++ / CUDA TensorRT fire + smoke detector (Jetson Orin, TRT 8.5)
+# Camera: 1920x1080 MJPEG 30 FPS. No intentional inference frame skipping.
+# No box smoothing, no box hold, no frame-history-based drawing cache.
+
+input_height: 416
+input_width: 736
+num_classes: 2
+fire_class_id: 0
+smoke_class_id: 1
+
+model_confidence_threshold: 0.10
+fire_confidence_threshold: 0.25
+smoke_confidence_threshold: 0.50
+iou_threshold: 0.50
+max_det: 20
+
+# Confirmation stays time-based for alert stability (does not alter boxes).
+fire_confirm_sec: 0.50
+smoke_confirm_sec: 0.50
+candidate_miss_grace_sec: 0.25
+clear_delay_sec: 1.00
+
+enabled: true
+
+# Hardware MJPEG decode (nvv4l2decoder + nvvidconv -> BGRx).
+# Set to opencv to return to the old CPU JPEG decoder.
+decoder_backend: nvidia

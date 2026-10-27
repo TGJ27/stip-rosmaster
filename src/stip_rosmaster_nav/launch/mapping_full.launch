@@ -1,0 +1,9 @@
+<launch>
+  <!-- Complete real-robot mapping: base + LiDAR + GMapping + optional RViz. -->
+  <arg name="use_rviz" default="true"/>
+  <include file="$(find stip_rosmaster_bringup)/launch/bringup.launch"/>
+  <include file="$(find stip_rosmaster_nav)/launch/lidar.launch"/>
+  <include file="$(find stip_rosmaster_nav)/launch/mapping.launch">
+    <arg name="use_rviz" value="$(arg use_rviz)"/>
+  </include>
+</launch>

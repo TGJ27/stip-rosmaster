@@ -1,0 +1,8 @@
+string name
+---
+bool success
+string message
+string qr_value
+string profile_path
+float32 pan
+float32 tilt

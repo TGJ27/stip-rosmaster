@@ -1,0 +1,10 @@
+<launch>
+  <!-- LiDAR-only package test. Does not start the robot base. -->
+  <include file="$(find ydlidar_ros_driver)/launch/TG.launch"/>
+
+  <!-- X3 Plus URDF provides base_link -> laser_link when bringup is running. -->
+  <node pkg="tf"
+        type="static_transform_publisher"
+        name="laser_link_to_laser"
+        args="0 0 0 6.28 0 0 /laser_link /laser 30"/>
+</launch>

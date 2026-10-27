@@ -1,0 +1,43 @@
+<launch>
+  <!--
+    Native C++ TensorRT implementation.
+    The existing Python fire_detection.launch remains untouched.
+  -->
+
+  <arg name="start_camera" default="true"/>
+  <arg name="camera_topic" default="/inspection_camera/image_raw/compressed"/>
+  <arg name="decoder_backend" default="nvidia"/>
+  <arg name="engine_path" default="$(find stip_fire_detection)/models/fire_smoke_yolov8s.engine"/>
+  <arg name="config" default="$(find stip_fire_detection)/config/fire_cpp.yaml"/>
+
+  <arg name="show_view" default="true"/>
+  <arg name="display_fps" default="30"/>
+  <arg name="preview_decode_scale" default="2"/>
+
+  <include if="$(arg start_camera)" file="$(find stip_inspection_camera)/launch/camera.launch"/>
+
+  <node pkg="stip_fire_detection"
+        type="fire_detector_cpp"
+        name="stip_fire_detector_cpp"
+        output="screen">
+    <rosparam command="load" file="$(arg config)"/>
+    <param name="camera_topic" value="$(arg camera_topic)"/>
+    <param name="engine_path" value="$(arg engine_path)"/>
+    <param name="decoder_backend" value="$(arg decoder_backend)"/>
+  </node>
+
+  <!-- Reuse the same proven 30 FPS viewer and topic contract. -->
+  <node if="$(arg show_view)"
+        pkg="stip_fire_detection"
+        type="fire_viewer.py"
+        name="stip_fire_viewer"
+        output="screen">
+    <param name="camera_topic" value="$(arg camera_topic)"/>
+    <param name="detection_topic" value="/fire_detection/detections"/>
+    <param name="status_topic" value="/fire_detection/status"/>
+    <param name="display_fps" value="$(arg display_fps)"/>
+    <param name="preview_decode_scale" value="$(arg preview_decode_scale)"/>
+    <param name="max_overlay_age" value="0.12"/>
+    <param name="opencv_threads" value="1"/>
+  </node>
+</launch>

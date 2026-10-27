@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>STIP ROSMASTER • Mission Control</title>
+<link rel="stylesheet" href="/static/style.css"></head>
+<body><header class="top"><div class="logo">STIP <b>ROSMASTER</b></div><div class="stat" id="connection">● ROS checking</div><div class="stat meta" id="hardware">CPU / GPU: —</div><div class="stat meta" id="timestamp">—</div><div class="grow"></div><button class="btn s" onclick="powerAction('power_restart')">Restart Jetson</button><button class="btn s" onclick="powerAction('power_off')">Power Off</button><button class="btn red s" onclick="emergencyStop()">EMERGENCY STOP</button></header>
+<div class="app"><nav class="side" id="sidebar"><button class="nav active" data-page="home">⌂ Home</button><button class="nav" data-page="maps">▧ Maps</button><button class="nav" data-page="mission">⚑ Mission</button><button class="nav" data-page="patrol">◎ Patrol</button><button class="nav" data-page="settings">⚙ Settings</button><div class="grow"></div><div class="small muted" style="padding:8px">ROS1 Noetic<br><span id="engine">Engine: STIP</span></div></nav><main class="main" id="main"></main></div><div id="modalRoot"></div><div id="toastRoot"></div>
+<script src="/static/js/core.js"></script>
+<script src="/static/js/views.js"></script>
+<script src="/static/js/map_view.js"></script>
+<script src="/static/js/mission.js"></script>
+<script src="/static/js/qr.js"></script>
+<script src="/static/js/inspection_ui.js"></script>
+<script src="/static/js/live_camera.js"></script>
+<script src="/static/js/gallery.js"></script>
+<script src="/static/js/operator_features.js"></script>
+<script src="/static/js/runtime.js"></script></body></html>

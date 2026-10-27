@@ -1,0 +1,8 @@
+<launch>
+  <!-- Mapping only. Assumes base odometry/TF and /scan already exist. -->
+  <arg name="use_rviz" default="true"/>
+  <include file="$(find stip_rosmaster_nav)/launch/library/gmapping.launch"/>
+  <group if="$(arg use_rviz)">
+    <include file="$(find stip_rosmaster_nav)/launch/view/view_map.launch"/>
+  </group>
+</launch>
